@@ -20,6 +20,7 @@ struct TodoRow: View {
 
     @State private var autosaveTask: Task<Void, Never>?
     @State private var title: String
+    @State private var isComposingTitle = false
     @State private var isCreatingCollection = false
     @State private var newCollection = ""
     @FocusState private var isCollectionFocused: Bool
@@ -104,6 +105,7 @@ struct TodoRow: View {
 
                 TodoTitleTextView(
                     text: $title,
+                    isComposing: $isComposingTitle,
                     isFocused: focusedField.wrappedValue == .title(item.id),
                     isDone: item.isDone,
                     isLocked: item.isLocked,
@@ -131,15 +133,27 @@ struct TodoRow: View {
                 }
             }
             .onChange(of: item.title) { _, newValue in
-                title = newValue
                 if focusedField.wrappedValue == .title(item.id) {
-                    updateActiveTitleEdit(item.id, newValue)
+                    updateActiveTitleEdit(item.id, title)
+                    if newValue != title {
+                        scheduleAutosave(title)
+                    }
+                    return
                 }
+
+                title = newValue
             }
             .onChange(of: title) { _, newValue in
                 if focusedField.wrappedValue == .title(item.id) {
                     updateActiveTitleEdit(item.id, newValue)
                     scheduleAutosave(newValue)
+                }
+            }
+            .onChange(of: isComposingTitle) { _, isComposing in
+                if isComposing {
+                    cancelAutosave()
+                } else if focusedField.wrappedValue == .title(item.id) {
+                    scheduleAutosave(title)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,13 +361,15 @@ struct TodoRow: View {
     private func scheduleAutosave(_ newTitle: String) {
         cancelAutosave()
 
-        guard !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !isComposingTitle,
+              !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
 
         autosaveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled,
+                  !isComposingTitle,
                   focusedField.wrappedValue == .title(item.id),
                   title == newTitle else {
                 return
@@ -492,6 +508,7 @@ struct TodoRow: View {
 
 private struct TodoTitleTextView: NSViewRepresentable {
     @Binding var text: String
+    @Binding var isComposing: Bool
 
     let isFocused: Bool
     let isDone: Bool
@@ -528,13 +545,16 @@ private struct TodoTitleTextView: NSViewRepresentable {
     func updateNSView(_ textView: SelfSizingTextView, context: Context) {
         context.coordinator.parent = self
 
-        if textView.string != text {
+        if !textView.hasMarkedText(), textView.string != text {
             let selectedRange = textView.selectedRange()
             textView.string = text
             textView.setSelectedRange(selectedRange.clamped(to: textView.string))
         }
 
-        applyStyle(to: textView)
+        if !textView.hasMarkedText() {
+            applyStyle(to: textView)
+        }
+
         textView.isEditable = !isLocked
         textView.isSelectable = !isLocked
         textView.updateTextContainerWidth()
@@ -610,7 +630,17 @@ private struct TodoTitleTextView: NSViewRepresentable {
                 return
             }
 
+            let hasMarkedText = textView.hasMarkedText()
+            if hasMarkedText {
+                parent.isComposing = true
+            }
+
             parent.text = textView.string
+
+            if !hasMarkedText {
+                parent.isComposing = false
+            }
+
             textView.invalidateIntrinsicContentSize()
         }
 
@@ -618,6 +648,8 @@ private struct TodoTitleTextView: NSViewRepresentable {
             guard let textView = notification.object as? SelfSizingTextView else {
                 return
             }
+
+            parent.isComposing = false
 
             DispatchQueue.main.async {
                 let window = textView.window
