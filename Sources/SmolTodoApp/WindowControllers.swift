@@ -19,21 +19,3 @@ struct WindowLevelController: NSViewRepresentable {
         nsView.window?.level = .normal
     }
 }
-
-struct TitlebarDescriptionController: NSViewRepresentable {
-    let description: String
-
-    func makeNSView(context: Context) -> NSView {
-        NSView(frame: .zero)
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            nsView.window?.subtitle = description
-        }
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
-        nsView.window?.subtitle = ""
-    }
-}

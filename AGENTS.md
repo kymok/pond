@@ -5,3 +5,4 @@
 - Respect the existing clean architecture if the codebase already follows it.
 - In planning mode, first ask the user whether they want a minimal-change approach or clean, compact code that may involve a wider rewrite.
 - Do not introduce behavior, visual styling, or UX changes that were not explicitly requested. Keep changes scoped to the user's instructions.
+- When checking an app bundle, confirm the displayed build ID is the expected value so old builds are not mistaken for current ones.

@@ -7,9 +7,10 @@ public struct CLIInstallStatus: Equatable, Sendable {
     public let installed: Bool
     public let conflictDescription: String?
     public let installDirectoryIsInPath: Bool
+    public let canUninstall: Bool
 
     public var canInstall: Bool {
-        !installed && conflictDescription == nil
+        !installed && (conflictDescription == nil || canUninstall)
     }
 }
 
@@ -79,16 +80,20 @@ public final class CommandLineInstaller: @unchecked Sendable {
         let target = targetURL.standardizedFileURL
         let installed: Bool
         let conflict: String?
+        let canUninstall: Bool
 
         switch kind {
         case .missing:
             installed = false
             conflict = nil
+            canUninstall = false
         case .file:
             installed = false
             conflict = "\(linkURL.path) already exists."
+            canUninstall = false
         case .symlink(let destination):
             installed = destination.standardizedFileURL == target
+            canUninstall = canRemoveSymlink(destination: destination)
             conflict = installed ? nil : "\(linkURL.path) points to \(destination.path)."
         }
 
@@ -97,7 +102,8 @@ public final class CommandLineInstaller: @unchecked Sendable {
             targetURL: target,
             installed: installed,
             conflictDescription: conflict,
-            installDirectoryIsInPath: pathContains(linkURL.deletingLastPathComponent())
+            installDirectoryIsInPath: pathContains(linkURL.deletingLastPathComponent()),
+            canUninstall: canUninstall
         )
     }
 
@@ -119,6 +125,10 @@ public final class CommandLineInstaller: @unchecked Sendable {
             throw CommandLineInstallerError.conflictingFile(linkURL)
         case .symlink(let destination):
             if destination.standardizedFileURL == targetURL.standardizedFileURL {
+                try writeRecord()
+            } else if canRemoveSymlink(destination: destination) {
+                try FileManager.default.removeItem(at: linkURL)
+                try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
                 try writeRecord()
             } else {
                 throw CommandLineInstallerError.conflictingSymlink(linkURL, destination)

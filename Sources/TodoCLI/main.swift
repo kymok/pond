@@ -19,14 +19,10 @@ struct TodoCommand {
         }
 
         switch command {
-        case "add":
-            try add(Array(arguments.dropFirst()))
-        case "get":
-            try get(Array(arguments.dropFirst()))
-        case "set":
-            try set(Array(arguments.dropFirst()))
-        case "delete":
-            try delete(Array(arguments.dropFirst()))
+        case "item":
+            try item(Array(arguments.dropFirst()))
+        case "collection":
+            try collection(Array(arguments.dropFirst()))
         case "-h", "--help", "help":
             printUsage()
         default:
@@ -34,9 +30,57 @@ struct TodoCommand {
         }
     }
 
-    private static func add(_ arguments: [String]) throws {
+    private static func item(_ arguments: [String]) throws {
+        guard let subcommand = arguments.first else {
+            throw CLIError.expectedItemSubcommand
+        }
+
+        switch subcommand {
+        case "create":
+            try itemCreate(Array(arguments.dropFirst()))
+        case "get":
+            try itemGet(Array(arguments.dropFirst()))
+        case "update":
+            try itemUpdate(Array(arguments.dropFirst()))
+        case "assign":
+            try itemAssign(Array(arguments.dropFirst()))
+        case "delete":
+            try itemDelete(Array(arguments.dropFirst()))
+        case "-h", "--help", "help":
+            printUsage()
+        default:
+            throw CLIError.unknownItemSubcommand(subcommand)
+        }
+    }
+
+    private static func collection(_ arguments: [String]) throws {
+        guard let subcommand = arguments.first else {
+            throw CLIError.expectedCollectionSubcommand
+        }
+
+        switch subcommand {
+        case "list":
+            try collectionList(Array(arguments.dropFirst()))
+        case "create":
+            try collectionCreate(Array(arguments.dropFirst()))
+        case "rename":
+            try collectionRename(Array(arguments.dropFirst()))
+        case "color":
+            try collectionColor(Array(arguments.dropFirst()))
+        case "delete":
+            try collectionDelete(Array(arguments.dropFirst()))
+        case "clear":
+            try collectionClear(Array(arguments.dropFirst()))
+        case "-h", "--help", "help":
+            printUsage()
+        default:
+            throw CLIError.unknownCollectionSubcommand(subcommand)
+        }
+    }
+
+    private static func itemCreate(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
-        let input = try parser.takeAddInput()
+        let input = try parser.takeCreateInput()
         let item = try TodoStore().add(
             title: input.title,
             collection: input.collection ?? TodoStore.defaultCollection
@@ -45,33 +89,45 @@ struct TodoCommand {
         printItems([item])
     }
 
-    private static func get(_ arguments: [String]) throws {
+    private static func itemGet(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
-        let status = parser.takeCompletionFilterIfPresent()
-        let target = try parser.takeTarget(allowEmpty: true)
+        let input = try parser.takeGetInput()
         let items = try TodoStore().items(
-            status: status,
-            collection: target.collection,
-            ids: target.ids
+            status: input.status,
+            priority: input.priority,
+            collection: input.target.collection,
+            ids: input.target.ids
         )
 
         printItems(items)
     }
 
-    private static func set(_ arguments: [String]) throws {
+    private static func itemUpdate(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
-        let input = try parser.takeSetInput()
-        let items = try TodoStore().setState(
-            isDone: input.status?.isDone,
-            isLocked: input.lockState?.isLocked,
-            ids: input.target.ids,
-            collection: input.target.collection
+        let input = try parser.takeUpdateInput()
+        let item = try TodoStore().update(
+            id: input.id,
+            title: input.title,
+            collection: input.collection,
+            status: input.status,
+            priority: input.priority
         )
 
-        printItems(items)
+        printItems([item])
     }
 
-    private static func delete(_ arguments: [String]) throws {
+    private static func itemAssign(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let input = try parser.takeAssignInput()
+        let item = try TodoStore().assign(
+            id: input.id,
+            assignees: input.assignees
+        )
+
+        printItems([item])
+    }
+
+    private static func itemDelete(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let target = try parser.takeTarget(allowEmpty: false)
         let items = try TodoStore().delete(ids: target.ids, collection: target.collection)
@@ -79,24 +135,107 @@ struct TodoCommand {
         printItems(items)
     }
 
+    private static func collectionList(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        try parser.rejectRemainingArguments()
+        let collections = try TodoStore().collectionSummaries()
+        printCollections(collections)
+    }
+
+    private static func collectionCreate(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let name = try parser.takeCollectionName()
+        let store = TodoStore()
+        let collection = try store.createCollection(name: name)
+
+        try printCollection(named: collection, in: store)
+    }
+
+    private static func collectionRename(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let input = try parser.takeRenameInput()
+        let store = TodoStore()
+        let collection = try store.renameCollection(from: input.oldName, to: input.newName)
+
+        try printCollection(named: collection, in: store)
+    }
+
+    private static func collectionColor(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let input = try parser.takeColorInput()
+        let collection = try TodoStore().setCollectionColor(name: input.name, color: input.color)
+
+        printCollections([collection])
+    }
+
+    private static func collectionDelete(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let name = try parser.takeCollectionName()
+        let store = TodoStore()
+        let collection = try collectionSummary(named: name, in: store)
+        _ = try store.deleteCollection(name: name)
+
+        printCollections([collection])
+    }
+
+    private static func collectionClear(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let input = try parser.takeClearInput()
+        let items = try TodoStore().clearItems(
+            collection: input.name,
+            completedOnly: input.completedOnly
+        )
+
+        printItems(items)
+    }
+
     private static func printItems(_ items: [TodoItem]) {
         for item in items {
-            let state = item.isDone ? "done" : "undone"
-            let lock = item.isLocked ? "locked" : "unlocked"
-            let title = item.title
-                .replacingOccurrences(of: "\t", with: " ")
-                .replacingOccurrences(of: "\n", with: " ")
-            print("\(item.id)\t\(state)\t\(lock)\t\(item.collection)\t\(title)")
+            print("\(item.id)\t\(item.status.rawValue)\t\(item.collection.cliEscaped)\t\(item.title.cliEscaped)")
         }
+    }
+
+    private static func printCollections(_ collections: [TodoCollectionSummary]) {
+        for collection in collections {
+            print(
+                [
+                    collection.name.cliEscaped,
+                    String(collection.totalCount),
+                    String(collection.incompleteCount),
+                    collection.color.rawValue,
+                    collection.statusIndicator?.rawValue ?? ""
+                ].joined(separator: "\t")
+            )
+        }
+    }
+
+    private static func printCollection(named name: String, in store: TodoStore) throws {
+        printCollections([try collectionSummary(named: name, in: store)])
+    }
+
+    private static func collectionSummary(named name: String, in store: TodoStore) throws -> TodoCollectionSummary {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let collection = try store.collectionSummaries().first(where: { $0.name == cleanName }) else {
+            throw TodoStoreError.collectionNotFound(cleanName)
+        }
+
+        return collection
     }
 
     private static func printUsage() {
         print(
             """
-            todo add [--collection <collection>] <title...>
-            todo get [done|undone] [--collection <collection> | <id...>]
-            todo set <done|undone|locked|unlocked>... <--collection <collection> | <id...>>
-            todo delete <--collection <collection> | <id...>>
+            todo item create [-c|--collection <collection>] <title...>
+            todo item get [-s|--status <status>] [--priority <priority>] [-c|--collection <collection> | <id...>]
+            todo item update <id> [-c|--collection <collection>] [-s|--status <status>] [--priority <priority>] [<title...>]
+            todo item assign <id> (--assignee <assignee> ... | --unassign)
+            todo item delete <-c|--collection <collection> | <id...>>
+            todo collection list
+            todo collection create <name>
+            todo collection rename <old-name> <new-name>
+            todo collection color <name> <gray|red|orange|yellow|green|blue|purple>
+            todo collection delete <name>
+            todo collection clear <name> [--completed]
             """
         )
     }
@@ -116,10 +255,38 @@ private struct AddInput {
     var collection: String?
 }
 
-private struct SetInput {
-    var status: TodoCompletionFilter?
-    var lockState: TodoLockState?
+private struct GetInput {
+    var status: TodoStatus?
+    var priority: TodoPriority?
     var target: Target
+}
+
+private struct UpdateInput {
+    var id: String
+    var title: String?
+    var collection: String?
+    var status: TodoStatus?
+    var priority: TodoPriority?
+}
+
+private struct AssignInput {
+    var id: String
+    var assignees: [String]
+}
+
+private struct RenameInput {
+    var oldName: String
+    var newName: String
+}
+
+private struct ColorInput {
+    var name: String
+    var color: TodoCollectionColor
+}
+
+private struct ClearInput {
+    var name: String
+    var completedOnly: Bool
 }
 
 private struct ArgumentScanner {
@@ -129,53 +296,142 @@ private struct ArgumentScanner {
         self.arguments = arguments
     }
 
-    mutating func takeCompletionFilterIfPresent() -> TodoCompletionFilter? {
-        guard let first = arguments.first, let status = TodoCompletionFilter(rawValue: first) else {
-            return nil
-        }
-
-        arguments.removeFirst()
-        return status
-    }
-
-    mutating func takeSetInput() throws -> SetInput {
-        var status: TodoCompletionFilter?
-        var lockState: TodoLockState?
+    mutating func takeGetInput() throws -> GetInput {
+        var status: TodoStatus?
+        var priority: TodoPriority?
+        var collection: String?
+        var ids: [String] = []
 
         while let argument = arguments.first {
-            if let nextStatus = TodoCompletionFilter(rawValue: argument) {
+            arguments.removeFirst()
+
+            switch argument {
+            case "-s", "--status":
                 guard status == nil else {
-                    throw CLIError.duplicateCompletionState
+                    throw CLIError.duplicateStatus
                 }
-                status = nextStatus
-                arguments.removeFirst()
-                continue
-            }
-
-            if let nextLockState = TodoLockState(rawValue: argument) {
-                guard lockState == nil else {
-                    throw CLIError.duplicateLockState
+                status = try takeRequiredStatus()
+            case "--priority":
+                guard priority == nil else {
+                    throw CLIError.duplicatePriority
                 }
-                lockState = nextLockState
-                arguments.removeFirst()
-                continue
+                priority = try takeRequiredPriority()
+            case "--collection", "-c":
+                guard collection == nil else {
+                    throw CLIError.duplicateCollectionFlag
+                }
+                collection = try takeRequiredCollection()
+            default:
+                if argument.hasPrefix("-") {
+                    throw CLIError.unknownOption(argument)
+                }
+                ids.append(argument)
             }
-
-            break
         }
 
-        guard status != nil || lockState != nil else {
-            throw CLIError.expectedSetState
+        if collection != nil && !ids.isEmpty {
+            throw TodoStoreError.targetConflict
         }
 
-        return SetInput(
-            status: status,
-            lockState: lockState,
-            target: try takeTarget(allowEmpty: false)
-        )
+        return GetInput(status: status, priority: priority, target: Target(collection: collection, ids: ids))
     }
 
-    mutating func takeAddInput() throws -> AddInput {
+    mutating func takeUpdateInput() throws -> UpdateInput {
+        guard let id = arguments.first else {
+            throw TodoStoreError.missingTarget
+        }
+        arguments.removeFirst()
+
+        var collection: String?
+        var status: TodoStatus?
+        var priority: TodoPriority?
+        var titleParts: [String] = []
+
+        while let argument = arguments.first {
+            arguments.removeFirst()
+
+            switch argument {
+            case "--":
+                titleParts.append(contentsOf: arguments)
+                arguments.removeAll()
+            case "--collection", "-c":
+                guard collection == nil else {
+                    throw CLIError.duplicateCollectionFlag
+                }
+                guard let value = arguments.first else {
+                    throw CLIError.missingCollection
+                }
+                arguments.removeFirst()
+                collection = value
+            case "--status", "-s":
+                guard status == nil else {
+                    throw CLIError.duplicateStatus
+                }
+                status = try takeRequiredStatus()
+            case "--priority":
+                guard priority == nil else {
+                    throw CLIError.duplicatePriority
+                }
+                priority = try takeRequiredPriority()
+            default:
+                if argument.hasPrefix("-") {
+                    throw CLIError.unknownOption(argument)
+                }
+                titleParts.append(argument)
+            }
+        }
+
+        let title = titleParts.isEmpty ? nil : titleParts.joined(separator: " ").cliUnescaped
+        guard title != nil || collection != nil || status != nil || priority != nil else {
+            throw TodoStoreError.missingUpdate
+        }
+
+        return UpdateInput(id: id, title: title, collection: collection, status: status, priority: priority)
+    }
+
+    mutating func takeAssignInput() throws -> AssignInput {
+        guard let id = arguments.first else {
+            throw TodoStoreError.missingTarget
+        }
+        arguments.removeFirst()
+
+        var assignees: [String]?
+        var unassigns = false
+
+        while let argument = arguments.first {
+            arguments.removeFirst()
+
+            switch argument {
+            case "--assignee":
+                guard !unassigns else {
+                    throw CLIError.assigneeConflict
+                }
+                assignees = (assignees ?? []) + [try takeRequiredAssignee()]
+            case "--unassign":
+                guard !unassigns else {
+                    throw CLIError.duplicateUnassign
+                }
+                guard assignees == nil else {
+                    throw CLIError.assigneeConflict
+                }
+                unassigns = true
+                assignees = []
+            default:
+                if argument.hasPrefix("-") {
+                    throw CLIError.unknownOption(argument)
+                }
+                throw CLIError.unexpectedArgument(argument)
+            }
+        }
+
+        guard let assignees else {
+            throw CLIError.missingAssignment
+        }
+
+        return AssignInput(id: id, assignees: assignees)
+    }
+
+    mutating func takeCreateInput() throws -> AddInput {
         var collection: String?
         var titleParts: [String] = []
 
@@ -186,15 +442,11 @@ private struct ArgumentScanner {
             case "--":
                 titleParts.append(contentsOf: arguments)
                 arguments.removeAll()
-            case "--collection":
+            case "--collection", "-c":
                 guard collection == nil else {
                     throw CLIError.duplicateCollectionFlag
                 }
-                guard let value = arguments.first else {
-                    throw CLIError.missingCollection
-                }
-                arguments.removeFirst()
-                collection = value
+                collection = try takeRequiredCollection()
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -207,7 +459,7 @@ private struct ArgumentScanner {
             throw CLIError.missingTitle
         }
 
-        return AddInput(title: titleParts.joined(separator: " "), collection: collection)
+        return AddInput(title: titleParts.joined(separator: " ").cliUnescaped, collection: collection)
     }
 
     mutating func takeTarget(allowEmpty: Bool) throws -> Target {
@@ -218,15 +470,11 @@ private struct ArgumentScanner {
             arguments.removeFirst()
 
             switch argument {
-            case "--collection":
+            case "--collection", "-c":
                 guard collection == nil else {
                     throw CLIError.duplicateCollectionFlag
                 }
-                guard let value = arguments.first else {
-                    throw CLIError.missingCollection
-                }
-                arguments.removeFirst()
-                collection = value
+                collection = try takeRequiredCollection()
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -245,45 +493,264 @@ private struct ArgumentScanner {
 
         return Target(collection: collection, ids: ids)
     }
+
+    mutating func takeCollectionName() throws -> String {
+        guard let name = arguments.first else {
+            throw CLIError.expectedCollectionName
+        }
+
+        arguments.removeFirst()
+        try rejectRemainingArguments()
+        return name.cliUnescaped
+    }
+
+    mutating func takeRenameInput() throws -> RenameInput {
+        guard let oldName = arguments.first else {
+            throw CLIError.expectedCollectionName
+        }
+        arguments.removeFirst()
+
+        guard let newName = arguments.first else {
+            throw CLIError.expectedCollectionName
+        }
+        arguments.removeFirst()
+
+        try rejectRemainingArguments()
+        return RenameInput(oldName: oldName.cliUnescaped, newName: newName.cliUnescaped)
+    }
+
+    mutating func takeColorInput() throws -> ColorInput {
+        guard let name = arguments.first else {
+            throw CLIError.expectedCollectionName
+        }
+        arguments.removeFirst()
+
+        guard let colorValue = arguments.first else {
+            throw CLIError.missingCollectionColor
+        }
+        arguments.removeFirst()
+
+        guard let color = TodoCollectionColor(rawValue: colorValue) else {
+            throw CLIError.expectedCollectionColor
+        }
+
+        try rejectRemainingArguments()
+        return ColorInput(name: name.cliUnescaped, color: color)
+    }
+
+    mutating func takeClearInput() throws -> ClearInput {
+        guard let name = arguments.first else {
+            throw CLIError.expectedCollectionName
+        }
+        arguments.removeFirst()
+
+        var completedOnly = false
+        while let argument = arguments.first {
+            arguments.removeFirst()
+
+            switch argument {
+            case "--completed":
+                guard !completedOnly else {
+                    throw CLIError.duplicateCompletedOnly
+                }
+                completedOnly = true
+            default:
+                if argument.hasPrefix("-") {
+                    throw CLIError.unknownOption(argument)
+                }
+                throw CLIError.unexpectedArgument(argument)
+            }
+        }
+
+        return ClearInput(name: name.cliUnescaped, completedOnly: completedOnly)
+    }
+
+    mutating func rejectRemainingArguments() throws {
+        guard let argument = arguments.first else {
+            return
+        }
+
+        if argument.hasPrefix("-") {
+            throw CLIError.unknownOption(argument)
+        }
+
+        throw CLIError.unexpectedArgument(argument)
+    }
+
+    private mutating func takeRequiredCollection() throws -> String {
+        guard let value = arguments.first else {
+            throw CLIError.missingCollection
+        }
+
+        arguments.removeFirst()
+        return value
+    }
+
+    private mutating func takeRequiredStatus() throws -> TodoStatus {
+        guard let value = arguments.first,
+              let status = TodoStatus(rawValue: value) else {
+            throw CLIError.expectedSetState
+        }
+
+        arguments.removeFirst()
+        return status
+    }
+
+    private mutating func takeRequiredPriority() throws -> TodoPriority {
+        guard let value = arguments.first,
+              let priority = TodoPriority(rawValue: value) else {
+            throw CLIError.expectedPriority
+        }
+
+        arguments.removeFirst()
+        return priority
+    }
+
+    private mutating func takeRequiredAssignee() throws -> String {
+        guard let value = arguments.first else {
+            throw CLIError.missingAssignee
+        }
+
+        arguments.removeFirst()
+        guard !value.cliUnescaped.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CLIError.emptyAssignee
+        }
+
+        return value.cliUnescaped
+    }
 }
 
-private enum TodoLockState: String {
-    case locked
-    case unlocked
+private extension String {
+    var cliEscaped: String {
+        var result = ""
 
-    var isLocked: Bool {
-        self == .locked
+        for character in self {
+            switch character {
+            case "\\":
+                result += "\\\\"
+            case "\n":
+                result += "\\n"
+            case "\r":
+                result += "\\r"
+            case "\t":
+                result += "\\t"
+            default:
+                result.append(character)
+            }
+        }
+
+        return result
+    }
+
+    var cliUnescaped: String {
+        var result = ""
+        var isEscaping = false
+
+        for character in self {
+            if isEscaping {
+                switch character {
+                case "n":
+                    result += "\n"
+                case "r":
+                    result += "\r"
+                case "t":
+                    result += "\t"
+                case "\\":
+                    result += "\\"
+                default:
+                    result += "\\"
+                    result.append(character)
+                }
+
+                isEscaping = false
+            } else if character == "\\" {
+                isEscaping = true
+            } else {
+                result.append(character)
+            }
+        }
+
+        if isEscaping {
+            result += "\\"
+        }
+
+        return result
     }
 }
 
 private enum CLIError: LocalizedError, Equatable {
     case unknownCommand(String)
+    case expectedItemSubcommand
+    case unknownItemSubcommand(String)
+    case expectedCollectionSubcommand
+    case unknownCollectionSubcommand(String)
     case unknownOption(String)
     case expectedSetState
-    case duplicateCompletionState
-    case duplicateLockState
+    case expectedPriority
+    case expectedCollectionColor
+    case duplicateStatus
+    case duplicatePriority
+    case missingAssignee
+    case emptyAssignee
+    case duplicateUnassign
+    case assigneeConflict
+    case missingAssignment
+    case unexpectedArgument(String)
     case missingTitle
     case missingCollection
+    case expectedCollectionName
+    case missingCollectionColor
     case duplicateCollectionFlag
+    case duplicateCompletedOnly
 
     var errorDescription: String? {
         switch self {
         case .unknownCommand(let command):
             "Unknown command '\(command)'."
+        case .expectedItemSubcommand:
+            "Expected item subcommand 'create', 'get', 'update', 'assign', or 'delete'."
+        case .unknownItemSubcommand(let subcommand):
+            "Unknown item subcommand '\(subcommand)'."
+        case .expectedCollectionSubcommand:
+            "Expected collection subcommand 'list', 'create', 'rename', 'color', 'delete', or 'clear'."
+        case .unknownCollectionSubcommand(let subcommand):
+            "Unknown collection subcommand '\(subcommand)'."
         case .unknownOption(let option):
             "Unknown option '\(option)'."
         case .expectedSetState:
-            "Expected 'done', 'undone', 'locked', or 'unlocked'."
-        case .duplicateCompletionState:
-            "Completion state can only be specified once."
-        case .duplicateLockState:
-            "Lock state can only be specified once."
+            "Expected 'ready', 'draft', 'in-progress', 'completed', 'on-hold', or 'aborted'."
+        case .expectedPriority:
+            "Expected 'normal' or 'prioritized'."
+        case .expectedCollectionColor:
+            "Expected 'gray', 'red', 'orange', 'yellow', 'green', 'blue', or 'purple'."
+        case .duplicateStatus:
+            "Todo status can only be specified once."
+        case .duplicatePriority:
+            "Todo priority can only be specified once."
+        case .missingAssignee:
+            "Expected an assignee after --assignee."
+        case .emptyAssignee:
+            "Assignee cannot be empty. Use --unassign to clear assignees."
+        case .duplicateUnassign:
+            "--unassign can only be specified once."
+        case .assigneeConflict:
+            "Use either --assignee or --unassign, not both."
+        case .missingAssignment:
+            "Assign requires --assignee or --unassign."
+        case .unexpectedArgument(let argument):
+            "Unexpected argument '\(argument)'."
         case .missingTitle:
-            "Add requires a title."
+            "Create requires a title."
         case .missingCollection:
-            "Expected a collection name after --collection."
+            "Expected a collection name after --collection or -c."
+        case .expectedCollectionName:
+            "Expected a collection name."
+        case .missingCollectionColor:
+            "Expected a collection color."
         case .duplicateCollectionFlag:
-            "--collection can only be specified once."
+            "--collection or -c can only be specified once."
+        case .duplicateCompletedOnly:
+            "--completed can only be specified once."
         }
     }
 }

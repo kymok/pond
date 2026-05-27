@@ -1,61 +1,83 @@
+import Foundation
 import SwiftUI
 import TodoCore
 
 struct SettingsView: View {
     @EnvironmentObject private var model: TodoAppModel
-    @AppStorage("alwaysOnTop") private var alwaysOnTop = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
-            Section("View") {
-                Toggle("Always on Top", isOn: $alwaysOnTop)
-            }
-
-            Section("Command Line") {
-                if let status = model.cliStatus {
-                    LabeledContent("Link") {
-                        Text(status.linkURL.path)
+        VStack(spacing: 0) {
+            Form {
+                Section("View") {
+                    LabeledContent("Build ID") {
+                        Text(buildID)
+                            .monospacedDigit()
                             .textSelection(.enabled)
                     }
+                }
 
-                    LabeledContent("Target") {
-                        Text(status.targetURL.path)
-                            .textSelection(.enabled)
-                    }
-
-                    LabeledContent("Status") {
-                        Text(statusText(status))
-                            .foregroundStyle(status.installed ? .green : .secondary)
-                    }
-
-                    if !status.installDirectoryIsInPath {
-                        LabeledContent("PATH") {
-                            Text(model.pathHint)
+                Section("Command Line") {
+                    if let status = model.cliStatus {
+                        LabeledContent("Link") {
+                            Text(status.linkURL.path)
                                 .textSelection(.enabled)
-                                .font(.system(.caption, design: .monospaced))
                         }
-                    }
 
-                    HStack {
-                        Button(status.installed ? "Reinstall" : "Install") {
-                            model.installCLI()
+                        LabeledContent("Status") {
+                            Text(statusText(status))
+                                .foregroundStyle(status.installed ? .green : .secondary)
                         }
-                        .disabled(status.conflictDescription != nil && !status.installed)
 
-                        Button("Uninstall") {
-                            model.uninstallCLI()
+                        LabeledContent("Shell PATH") {
+                            Text(pathStatusText(status))
+                                .foregroundStyle(status.installDirectoryIsInPath ? .green : .secondary)
                         }
-                        .disabled(!status.installed)
+
+                        if !status.installDirectoryIsInPath {
+                            LabeledContent("Add to PATH") {
+                                Text(model.pathHint)
+                                    .monospaced()
+                                    .textSelection(.enabled)
+                            }
+                        }
+
+                        HStack {
+                            Button("Reinstall") {
+                                model.installCLI()
+                            }
+                            .disabled(!status.installed && !status.canInstall)
+
+                            Button("Uninstall") {
+                                model.uninstallCLI()
+                            }
+                            .disabled(!status.canUninstall)
+                        }
                     }
                 }
             }
+            .formStyle(.grouped)
+
+            Divider()
+
+            HStack {
+                Spacer()
+
+                Button("Close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding()
         }
-        .formStyle(.grouped)
         .frame(width: 560)
-        .padding()
         .onAppear {
             model.refreshCLIStatus()
         }
+    }
+
+    private var buildID: String {
+        Bundle.main.object(forInfoDictionaryKey: "SmolTodoBuildID") as? String ?? "Unavailable"
     }
 
     private func statusText(_ status: CLIInstallStatus) -> String {
@@ -68,5 +90,9 @@ struct SettingsView: View {
         }
 
         return "Not installed"
+    }
+
+    private func pathStatusText(_ status: CLIInstallStatus) -> String {
+        status.installDirectoryIsInPath ? "Configured" : "\(status.linkURL.deletingLastPathComponent().path) is not in PATH"
     }
 }

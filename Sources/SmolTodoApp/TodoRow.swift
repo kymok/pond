@@ -6,14 +6,16 @@ struct TodoRow: View {
     @EnvironmentObject private var model: TodoAppModel
 
     let item: TodoItem
-    let isDraft: Bool
-    let isDragPlaceholder: Bool
+    let isPendingDraft: Bool
     let focusedField: Binding<TodoFocusField?>
     let updateActiveTitleEdit: (String, String) -> Void
     let clearActiveTitleEdit: (String) -> Void
     let saveTitleChange: (TodoItem, String, TodoFocusField?) -> Void
     let moveItemToCollection: (TodoItem, String) -> Void
     let insertDraftBelow: (TodoItem, String) -> Void
+    let titleFocusSelectionBehavior: TodoFocusSelectionBehavior?
+    let consumeTitleFocusSelectionBehavior: () -> Void
+    let hasVisibleItemAfter: (TodoItem) -> Bool
     let moveFocus: (TodoItem, TodoFocusDirection, TodoFocusSelectionBehavior) -> Bool
     let deleteAndFocusPrevious: (TodoItem) -> Void
     let deleteEmptyAndMoveFocusDown: (TodoItem, TodoFocusSelectionBehavior) -> Bool
@@ -23,31 +25,36 @@ struct TodoRow: View {
     @State private var isComposingTitle = false
     @State private var isCreatingCollection = false
     @State private var newCollection = ""
+    @State private var skipsNextFocusLossSave = false
     @FocusState private var isCollectionFocused: Bool
 
     init(
         item: TodoItem,
-        isDraft: Bool,
-        isDragPlaceholder: Bool,
+        isPendingDraft: Bool,
         focusedField: Binding<TodoFocusField?>,
         updateActiveTitleEdit: @escaping (String, String) -> Void,
         clearActiveTitleEdit: @escaping (String) -> Void,
         saveTitleChange: @escaping (TodoItem, String, TodoFocusField?) -> Void,
         moveItemToCollection: @escaping (TodoItem, String) -> Void,
         insertDraftBelow: @escaping (TodoItem, String) -> Void,
+        titleFocusSelectionBehavior: TodoFocusSelectionBehavior?,
+        consumeTitleFocusSelectionBehavior: @escaping () -> Void,
+        hasVisibleItemAfter: @escaping (TodoItem) -> Bool,
         moveFocus: @escaping (TodoItem, TodoFocusDirection, TodoFocusSelectionBehavior) -> Bool,
         deleteAndFocusPrevious: @escaping (TodoItem) -> Void,
         deleteEmptyAndMoveFocusDown: @escaping (TodoItem, TodoFocusSelectionBehavior) -> Bool
     ) {
         self.item = item
-        self.isDraft = isDraft
-        self.isDragPlaceholder = isDragPlaceholder
+        self.isPendingDraft = isPendingDraft
         self.focusedField = focusedField
         self.updateActiveTitleEdit = updateActiveTitleEdit
         self.clearActiveTitleEdit = clearActiveTitleEdit
         self.saveTitleChange = saveTitleChange
         self.moveItemToCollection = moveItemToCollection
         self.insertDraftBelow = insertDraftBelow
+        self.titleFocusSelectionBehavior = titleFocusSelectionBehavior
+        self.consumeTitleFocusSelectionBehavior = consumeTitleFocusSelectionBehavior
+        self.hasVisibleItemAfter = hasVisibleItemAfter
         self.moveFocus = moveFocus
         self.deleteAndFocusPrevious = deleteAndFocusPrevious
         self.deleteEmptyAndMoveFocusDown = deleteEmptyAndMoveFocusDown
@@ -57,70 +64,97 @@ struct TodoRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Button {
-                model.setDone(item, isDone: !item.isDone)
+                model.advanceStatusFromLeadingClick(item)
             } label: {
-                Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20, weight: .regular))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(item.isDone ? .green : .secondary)
-                    .frame(width: 24, height: 24)
+                statusImage
             }
             .buttonStyle(.plain)
-            .help(item.isDone ? "Mark undone" : "Mark done")
-            .disabled(isDraft)
+            .help(leadingStatusButtonTitle)
+            .disabled(isPendingDraft)
+            .background(
+                LocalRightClickHandler {
+                    markDraftFromStatusButton()
+                }
+            )
             .alignmentGuide(.top) { dimensions in
                 dimensions[VerticalAlignment.center] - TodoRowLayout.titleFirstLineCenterY
             }
 
-            if isDraft {
+            if isPendingDraft {
                 Color.clear
                     .frame(width: 24, height: 24)
                     .alignmentGuide(.top) { dimensions in
                         dimensions[VerticalAlignment.center] - TodoRowLayout.titleFirstLineCenterY
                     }
             } else {
-                Button {
-                    model.setLocked(item, isLocked: !item.isLocked)
+                Menu {
+                    Section("Status") {
+                        ForEach(TodoStatus.allCases, id: \.self) { status in
+                            Button {
+                                model.setStatus(item, status: status)
+                            } label: {
+                                TodoStatusLabel(status: status)
+                            }
+                        }
+                    }
+
+                    Section("Priority") {
+                        ForEach(TodoPriority.allCases, id: \.self) { priority in
+                            Button {
+                                model.setPriority(item, priority: priority)
+                            } label: {
+                                Label {
+                                    Text(priority.displayName)
+                                } icon: {
+                                    if item.priority == priority {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Section("Item") {
+                        Button(cleanAssignees.isEmpty ? "Set Assignees..." : "Edit Assignees...") {
+                            model.requestAssigneeEdit(item)
+                        }
+
+                        Button("Copy ID") {
+                            copyIDToPasteboard()
+                        }
+
+                        Button("Delete", role: .destructive) {
+                            deleteAndFocusPrevious(item)
+                        }
+                    }
                 } label: {
-                    Image(systemName: item.isLocked ? "lock.fill" : "lock.open")
-                        .font(.system(size: 16, weight: .regular))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(item.isLocked ? .orange : .secondary)
-                        .frame(width: 24, height: 24)
+                    itemMenuIcon
                 }
                 .buttonStyle(.plain)
-                .help(item.isLocked ? "Unlock" : "Lock")
+                .help("Todo status")
                 .alignmentGuide(.top) { dimensions in
                     dimensions[VerticalAlignment.center] - TodoRowLayout.titleFirstLineCenterY
                 }
             }
 
-            ZStack(alignment: .topLeading) {
-                if title.isEmpty {
-                    Text("Title")
-                        .frame(height: TodoRowLayout.titleLineHeight, alignment: .center)
-                        .foregroundStyle(.tertiary)
-                        .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 6) {
+                titleEditor
+
+                if item.priority == .prioritized {
+                    priorityLabel
+                        .transition(.opacity)
                 }
 
-                TodoTitleTextView(
-                    text: $title,
-                    isComposing: $isComposingTitle,
-                    isFocused: focusedField.wrappedValue == .title(item.id),
-                    isDone: item.isDone,
-                    isLocked: item.isLocked,
-                    focus: {
-                        focusedField.wrappedValue = .title(item.id)
-                    },
-                    clearFocusIfCurrent: {
-                        if focusedField.wrappedValue == .title(item.id) {
-                            focusedField.wrappedValue = nil
-                        }
-                    }
-                )
-                .id(model.selectedCollectionName == nil)
+                if !cleanAssignees.isEmpty {
+                    assigneeLabel(cleanAssignees)
+                        .transition(.opacity)
+                }
             }
             .frame(minHeight: TodoRowLayout.titleLineHeight, alignment: .topLeading)
+            .animation(.easeInOut(duration: 0.22), value: item.priority)
+            .animation(.easeInOut(duration: 0.22), value: cleanAssignees)
             .onChange(of: focusedField.wrappedValue) { oldFocus, newFocus in
                 if newFocus == .title(item.id) {
                     updateActiveTitleEdit(item.id, title)
@@ -128,7 +162,11 @@ struct TodoRow: View {
 
                 if oldFocus == .title(item.id), newFocus != .title(item.id) {
                     cancelAutosave()
-                    saveTitle(afterMovingFocusTo: newFocus)
+                    if skipsNextFocusLossSave {
+                        skipsNextFocusLossSave = false
+                    } else {
+                        saveTitle(afterMovingFocusTo: newFocus)
+                    }
                     clearActiveTitleEdit(item.id)
                 }
             }
@@ -162,38 +200,220 @@ struct TodoRow: View {
                 collectionControl
             }
         }
-        .opacity(isDragPlaceholder ? 0 : 1)
         .padding(.vertical, TodoRowLayout.rowVerticalPadding)
         .padding(.horizontal, 12)
         .frame(minHeight: TodoRowLayout.rowMinHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .todoRowHitArea(focusTitle)
         .background(
-            FocusedTextFieldKeyHandler(isActive: isFocused) { event, fieldEditor in
-                handleKeyDown(event, fieldEditor: fieldEditor)
+            FocusedTextFieldKeyHandler(isActive: isCollectionFocusedForKeyHandling) { event, fieldEditor in
+                handleCollectionKeyDown(event, fieldEditor: fieldEditor)
             }
         )
         .contextMenu {
-            Button(item.isDone ? "Mark Undone" : "Mark Done") {
-                model.setDone(item, isDone: !item.isDone)
+            Button("Mark Draft") {
+                model.setStatus(item, status: .draft)
             }
-            .disabled(isDraft)
+            .disabled(isPendingDraft || item.status == .draft)
 
             Button("Delete", role: .destructive) {
                 deleteAndFocusPrevious(item)
             }
-            .disabled(item.isLocked)
+        }
+        .onChange(of: item.status) { _, _ in
+            clearSelectionAfterStatusChange()
+            clearLockedFocus()
         }
         .onDisappear(perform: cancelAutosave)
     }
 
     private var isFocused: Bool {
-        focusedField.wrappedValue == .title(item.id)
-            || focusedField.wrappedValue == .collection(item.id)
+        canEditTitleAndCollection
+            && (
+                focusedField.wrappedValue == .title(item.id)
+                    || focusedField.wrappedValue == .collection(item.id)
+            )
+    }
+
+    private var isCollectionFocusedForKeyHandling: Bool {
+        canEditTitleAndCollection && focusedField.wrappedValue == .collection(item.id)
+    }
+
+    private var canEditTitleAndCollection: Bool {
+        item.status != .inProgress && item.status != .completed
+    }
+
+    private var leadingStatusButtonTitle: String {
+        "Mark \(item.status.leadingStatusClickTarget.displayName)"
+    }
+
+    private func markDraftFromStatusButton() {
+        guard !isPendingDraft, item.status != .draft else {
+            return
+        }
+
+        model.setStatus(item, status: .draft)
+    }
+
+    @ViewBuilder
+    private var statusImage: some View {
+        let image = TodoStatusIcon(
+            status: item.status,
+            font: .system(size: 20, weight: .regular)
+        )
+            .frame(width: 24, height: 24)
+
+        if #available(macOS 15.0, *) {
+            image.contentTransition(.symbolEffect(.replace.magic(fallback: .replace.downUp)))
+        } else {
+            image
+        }
+    }
+
+    private var cleanAssignees: [String] {
+        item.assignees
+    }
+
+    private var titleEditor: some View {
+        ZStack(alignment: .topLeading) {
+            if title.isEmpty {
+                Text("Title")
+                    .frame(height: TodoRowLayout.titleLineHeight, alignment: .center)
+                    .foregroundStyle(.tertiary)
+                    .allowsHitTesting(false)
+            }
+
+            TodoTitleTextView(
+                text: $title,
+                isComposing: $isComposingTitle,
+                isFocused: canEditTitleAndCollection && focusedField.wrappedValue == .title(item.id),
+                isEditable: canEditTitleAndCollection,
+                status: item.status,
+                selectionBehavior: titleFocusSelectionBehavior,
+                consumeSelectionBehavior: consumeTitleFocusSelectionBehavior,
+                focus: {
+                    guard canEditTitleAndCollection else {
+                        return
+                    }
+
+                    focusedField.wrappedValue = .title(item.id)
+                },
+                clearFocusIfCurrent: {
+                    if focusedField.wrappedValue == .title(item.id) {
+                        focusedField.wrappedValue = nil
+                    }
+                },
+                onKeyDown: { event, textView in
+                    handleTitleKeyDown(event, textView: textView)
+                }
+            )
+            .id(TodoTitleTextViewIdentity(
+                itemID: item.id,
+                showsCollection: model.selectedCollectionName == nil
+            ))
+            .allowsHitTesting(canEditTitleAndCollection || item.status != .inProgress)
+        }
+    }
+
+    private func assigneeLabel(_ assignees: [String]) -> some View {
+        Button {
+            model.requestAssigneeEdit(item)
+        } label: {
+            metadataRow {
+                metadataIcon(systemName: "person.fill")
+            } text: {
+                Text(assignees.joined(separator: ", "))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .help("Edit assignees")
+    }
+
+    private var priorityLabel: some View {
+        Menu {
+            ForEach(TodoPriority.allCases, id: \.self) { priority in
+                Button {
+                    model.setPriority(item, priority: priority)
+                } label: {
+                    Label {
+                        Text(priority.displayName)
+                    } icon: {
+                        if item.priority == priority {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            metadataRow {
+                metadataIcon(systemName: "arrow.trianglehead.turn.up.right.diamond.fill")
+            } text: {
+                Text(TodoPriority.prioritized.displayName)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .help("Change priority")
+    }
+
+    private func metadataRow<Icon: View, Label: View>(
+        @ViewBuilder icon: () -> Icon,
+        @ViewBuilder text: () -> Label
+    ) -> some View {
+        HStack(spacing: 4) {
+            icon()
+                .frame(width: 16, alignment: .center)
+
+            text()
+        }
+        .font(.caption)
+    }
+
+    private func metadataIcon(systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.caption)
+            .foregroundStyle(Color.gray)
+            .frame(width: 16, alignment: .center)
+    }
+
+    private var hasUnsavedTitleText: Bool {
+        title != item.title || autosaveTask != nil || isComposingTitle
+    }
+
+    @ViewBuilder
+    private var itemMenuIcon: some View {
+        if hasUnsavedTitleText {
+            ZStack {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.quaternary)
+
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 5, height: 5)
+            }
+            .frame(width: 24, height: 24)
+        } else {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 16, weight: .regular))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.primary, .quaternary)
+                .frame(width: 24, height: 24)
+        }
+    }
+
+    private func copyIDToPasteboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(item.id, forType: .string)
     }
 
     private func focusTitle() {
-        guard !item.isLocked else {
+        guard canEditTitleAndCollection else {
             return
         }
 
@@ -204,22 +424,49 @@ struct TodoRow: View {
         }
     }
 
-    private func handleKeyDown(_ event: NSEvent, fieldEditor: NSTextView) -> Bool {
-        guard !fieldEditor.hasMarkedText() else {
+    private func clearLockedFocus() {
+        guard !canEditTitleAndCollection else {
+            return
+        }
+
+        if focusedField.wrappedValue == .title(item.id)
+            || focusedField.wrappedValue == .collection(item.id) {
+            focusedField.wrappedValue = nil
+        }
+
+        isCollectionFocused = false
+        isCreatingCollection = false
+        newCollection = ""
+    }
+
+    private func clearSelectionAfterStatusChange() {
+        guard focusedField.wrappedValue == .title(item.id) else {
+            return
+        }
+
+        clearCurrentTextFieldSelection()
+    }
+
+    private func handleTitleKeyDown(_ event: NSEvent, textView: NSTextView) -> Bool {
+        guard !textView.hasMarkedText() else {
             return false
         }
 
         switch event.keyCode {
+        case KeyCode.escape:
+            return defocus(event)
         case KeyCode.backspace:
-            return deleteIfEmptyTitleAtStart(event, fieldEditor: fieldEditor)
+            syncTitleFocusAndText(from: textView)
+            return deleteIfEmptyTitleAtStart(event, fieldEditor: textView)
         case KeyCode.returnKey, KeyCode.keypadEnter:
-            return insertDraftBelowFromTitle(event)
+            return handleTitleReturn(event, textView: textView)
         case KeyCode.arrowUp:
             guard event.isPlainKey else {
                 return false
             }
 
-            if focusedField.wrappedValue == .title(item.id), !isInsertionPointOnFirstVisualLine(fieldEditor) {
+            syncTitleFocusAndText(from: textView)
+            guard isInsertionPointOnFirstVisualLine(textView) else {
                 return false
             }
 
@@ -229,18 +476,51 @@ struct TodoRow: View {
                 return false
             }
 
-            if focusedField.wrappedValue == .title(item.id) {
-                guard isInsertionPointOnLastVisualLine(fieldEditor) else {
-                    return false
-                }
+            syncTitleFocusAndText(from: textView)
+            guard isInsertionPointOnLastVisualLine(textView) else {
+                return false
+            }
 
-                return moveFocusDownFromTitle(event, selectionBehavior: .selectAll)
+            return moveFocusDownFromTitle(event, selectionBehavior: .selectAll)
+        default:
+            return false
+        }
+    }
+
+    private func handleCollectionKeyDown(_ event: NSEvent, fieldEditor: NSTextView) -> Bool {
+        guard !fieldEditor.hasMarkedText() else {
+            return false
+        }
+
+        switch event.keyCode {
+        case KeyCode.escape:
+            return defocus(event)
+        case KeyCode.arrowUp:
+            guard event.isPlainKey else {
+                return false
+            }
+
+            return moveFocus(item, .up, .selectAll)
+        case KeyCode.arrowDown:
+            guard event.isPlainKey else {
+                return false
             }
 
             return moveFocus(item, .down, .selectAll)
         default:
             return false
         }
+    }
+
+    private func defocus(_ event: NSEvent) -> Bool {
+        guard event.isPlainKey else {
+            return false
+        }
+
+        focusedField.wrappedValue = nil
+        isCollectionFocused = false
+        event.window?.makeFirstResponder(nil)
+        return true
     }
 
     private func isInsertionPointOnFirstVisualLine(_ fieldEditor: NSTextView) -> Bool {
@@ -317,16 +597,25 @@ struct TodoRow: View {
         return true
     }
 
-    private func insertDraftBelowFromTitle(_ event: NSEvent) -> Bool {
-        guard focusedField.wrappedValue == .title(item.id), event.isPlainKey else {
+    private func handleTitleReturn(_ event: NSEvent, textView: NSTextView) -> Bool {
+        guard event.isPlainKey else {
             return false
         }
 
-        if isEmptyTitle {
+        syncTitleFocusAndText(from: textView)
+        let currentTitle = textView.string
+        if currentTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return deleteEmptyAndMoveFocusDown(item, .moveInsertionPointToEnd)
         }
 
-        insertDraftBelow(item, (NSApp.keyWindow?.firstResponder as? NSTextView)?.string ?? title)
+        if hasVisibleItemAfter(item) {
+            _ = moveFocus(item, .down, .moveInsertionPointToEnd)
+            return true
+        }
+
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        insertDraftBelow(item, currentTitle)
         return true
     }
 
@@ -370,6 +659,7 @@ struct TodoRow: View {
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled,
                   !isComposingTitle,
+                  !currentTitleEditorHasMarkedText(),
                   focusedField.wrappedValue == .title(item.id),
                   title == newTitle else {
                 return
@@ -385,13 +675,28 @@ struct TodoRow: View {
         autosaveTask = nil
     }
 
+    private func currentTitleEditorHasMarkedText() -> Bool {
+        (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+    }
+
+    private func syncTitleFocusAndText(from textView: NSTextView) {
+        let currentTitle = textView.string
+        focusedField.wrappedValue = .title(item.id)
+
+        if title != currentTitle {
+            title = currentTitle
+        }
+
+        updateActiveTitleEdit(item.id, currentTitle)
+    }
+
     private var isEmptyTitle: Bool {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @ViewBuilder
     private var collectionControl: some View {
-        if isCreatingCollection {
+        if isCreatingCollection && canEditTitleAndCollection {
             TextField("Collection", text: $newCollection)
                 .textFieldStyle(.plain)
                 .focused($isCollectionFocused)
@@ -431,20 +736,24 @@ struct TodoRow: View {
         } else {
             Menu {
                 ForEach(model.collectionNames, id: \.self) { collection in
-                    Button(collection) {
+                    Button {
                         moveToCollection(collection)
                         if isEmptyTitle {
                             focusTitle()
                         }
+                    } label: {
+                        collectionLabel(collection)
                     }
                 }
 
                 Divider()
-                Button("Create new...") {
+                Button("Create New...") {
                     beginCreatingCollection()
                 }
             } label: {
                 HStack(spacing: 4) {
+                    collectionColorIcon(item.collection)
+
                     Text(item.collection)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -459,17 +768,33 @@ struct TodoRow: View {
             }
             .buttonStyle(.plain)
             .frame(width: TodoRowLayout.collectionControlWidth)
-            .disabled(item.isLocked)
+            .disabled(!canEditTitleAndCollection)
         }
     }
 
+    private func collectionLabel(_ collection: String) -> some View {
+        Label {
+            Text(collection)
+        } icon: {
+            collectionColorIcon(collection)
+        }
+    }
+
+    private func collectionColorIcon(_ collection: String) -> some View {
+        CollectionColorSwatch(color: model.collectionColor(named: collection), size: 7)
+    }
+
     private func beginCreatingCollection() {
+        guard canEditTitleAndCollection else {
+            return
+        }
+
         isCreatingCollection = true
         newCollection = ""
     }
 
     private func moveToCollection(_ name: String) {
-        guard name != item.collection else {
+        guard canEditTitleAndCollection, name != item.collection else {
             return
         }
 
@@ -477,6 +802,10 @@ struct TodoRow: View {
     }
 
     private func focusNewCollectionField() {
+        guard canEditTitleAndCollection else {
+            return
+        }
+
         focusedField.wrappedValue = .collection(item.id)
         DispatchQueue.main.async {
             isCollectionFocused = true
@@ -506,15 +835,23 @@ struct TodoRow: View {
     }
 }
 
+private struct TodoTitleTextViewIdentity: Hashable {
+    var itemID: String
+    var showsCollection: Bool
+}
+
 private struct TodoTitleTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var isComposing: Bool
 
     let isFocused: Bool
-    let isDone: Bool
-    let isLocked: Bool
+    let isEditable: Bool
+    let status: TodoStatus
+    let selectionBehavior: TodoFocusSelectionBehavior?
+    let consumeSelectionBehavior: () -> Void
     let focus: () -> Void
     let clearFocusIfCurrent: () -> Void
+    let onKeyDown: (NSEvent, NSTextView) -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -523,6 +860,7 @@ private struct TodoTitleTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> SelfSizingTextView {
         let textView = SelfSizingTextView()
         textView.delegate = context.coordinator
+        textView.onKeyDown = onKeyDown
         textView.drawsBackground = false
         textView.isRichText = false
         textView.importsGraphics = false
@@ -544,24 +882,29 @@ private struct TodoTitleTextView: NSViewRepresentable {
 
     func updateNSView(_ textView: SelfSizingTextView, context: Context) {
         context.coordinator.parent = self
+        textView.onKeyDown = onKeyDown
 
+        var needsStyleUpdate = textView.appliedStyleDimsTitle != status.dimsTitle
+        var needsSizeInvalidation = false
         if !textView.hasMarkedText(), textView.string != text {
             let selectedRange = textView.selectedRange()
             textView.string = text
-            textView.setSelectedRange(selectedRange.clamped(to: textView.string))
+            textView.setSelectedRangeIfNeeded(selectedRange.clamped(to: textView.string))
+            needsStyleUpdate = true
+            needsSizeInvalidation = true
         }
 
-        if !textView.hasMarkedText() {
+        if !textView.hasMarkedText(), needsStyleUpdate {
             applyStyle(to: textView)
         }
 
-        textView.isEditable = !isLocked
-        textView.isSelectable = !isLocked
-        textView.updateTextContainerWidth()
-        textView.invalidateIntrinsicContentSize()
+        textView.setEditableIfNeeded(isEditable)
+        if textView.updateTextContainerWidth() || needsSizeInvalidation {
+            textView.invalidateIntrinsicContentSize()
+        }
 
-        if isFocused, !isLocked {
-            focus(textView)
+        if isFocused && isEditable {
+            focus(textView, selectionBehavior: selectionBehavior)
         } else if textView.window?.firstResponder === textView {
             textView.window?.makeFirstResponder(nil)
         }
@@ -576,27 +919,43 @@ private struct TodoTitleTextView: NSViewRepresentable {
         return CGSize(width: width, height: nsView.measuredHeight(fitting: width))
     }
 
-    private func focus(_ textView: SelfSizingTextView) {
+    private func focus(_ textView: SelfSizingTextView, selectionBehavior: TodoFocusSelectionBehavior?) {
         if let window = textView.window {
             if window.firstResponder !== textView {
                 window.makeFirstResponder(textView)
             }
+            applySelectionIfNeeded(to: textView, selectionBehavior: selectionBehavior)
         } else {
             DispatchQueue.main.async {
-                if self.isFocused, !self.isLocked {
+                if self.isFocused {
                     textView.window?.makeFirstResponder(textView)
+                    self.applySelectionIfNeeded(to: textView, selectionBehavior: selectionBehavior)
                 }
             }
         }
     }
 
-    private func applyStyle(to textView: NSTextView) {
+    @MainActor
+    private func applySelectionIfNeeded(
+        to textView: SelfSizingTextView,
+        selectionBehavior: TodoFocusSelectionBehavior?
+    ) {
+        guard textView.window?.firstResponder === textView,
+              let selectionBehavior else {
+            return
+        }
+
+        selectionBehavior.apply(to: textView)
+        consumeSelectionBehavior()
+    }
+
+    private func applyStyle(to textView: SelfSizingTextView) {
         let selectedRange = textView.selectedRange()
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = TodoRowLayout.titleLineSpacing
         paragraphStyle.lineBreakMode = .byWordWrapping
 
-        let textColor = isDone || isLocked ? NSColor.secondaryLabelColor : NSColor.labelColor
+        let textColor = status.dimsTitle ? NSColor.secondaryLabelColor : NSColor.labelColor
         textView.font = TodoRowLayout.titleFont
         textView.textColor = textColor
         textView.defaultParagraphStyle = paragraphStyle
@@ -611,7 +970,8 @@ private struct TodoTitleTextView: NSViewRepresentable {
             textView.textStorage?.setAttributes(textView.typingAttributes, range: range)
         }
 
-        textView.setSelectedRange(selectedRange.clamped(to: textView.string))
+        textView.setSelectedRangeIfNeeded(selectedRange.clamped(to: textView.string))
+        textView.appliedStyleDimsTitle = status.dimsTitle
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -622,6 +982,11 @@ private struct TodoTitleTextView: NSViewRepresentable {
         }
 
         func textDidBeginEditing(_ notification: Notification) {
+            guard parent.isEditable else {
+                parent.clearFocusIfCurrent()
+                return
+            }
+
             parent.focus()
         }
 
@@ -659,9 +1024,8 @@ private struct TodoTitleTextView: NSViewRepresentable {
                 }
 
                 if self.parent.isFocused,
-                   !self.parent.isLocked,
                    firstResponder == nil || firstResponder === window {
-                    self.parent.focus(textView)
+                    self.parent.focus(textView, selectionBehavior: self.parent.selectionBehavior)
                     return
                 }
 
@@ -674,27 +1038,42 @@ private struct TodoTitleTextView: NSViewRepresentable {
             shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
-            replacementString?.contains("\n") != true
+            guard parent.isEditable else {
+                return false
+            }
+
+            return true
         }
     }
 
     final class SelfSizingTextView: NSTextView {
+        var appliedStyleDimsTitle: Bool?
+        var onKeyDown: ((NSEvent, NSTextView) -> Bool)?
+
         override var intrinsicContentSize: NSSize {
             NSSize(width: NSView.noIntrinsicMetric, height: measuredHeight(fitting: bounds.width))
         }
 
+        override func keyDown(with event: NSEvent) {
+            if onKeyDown?(event, self) == true {
+                return
+            }
+
+            super.keyDown(with: event)
+        }
+
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-            filePaths(from: sender).isEmpty ? super.draggingEntered(sender) : .copy
+            filePaths(from: sender).isEmpty ? [] : .copy
         }
 
         override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-            filePaths(from: sender).isEmpty ? super.draggingUpdated(sender) : .copy
+            filePaths(from: sender).isEmpty ? [] : .copy
         }
 
         override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
             let paths = filePaths(from: sender)
             guard isEditable, !paths.isEmpty else {
-                return super.performDragOperation(sender)
+                return false
             }
 
             let insertion = paths
@@ -714,7 +1093,7 @@ private struct TodoTitleTextView: NSViewRepresentable {
         override func setFrameSize(_ newSize: NSSize) {
             let oldWidth = frame.width
             super.setFrameSize(newSize)
-            updateTextContainerWidth()
+            _ = updateTextContainerWidth()
 
             if abs(oldWidth - newSize.width) > 0.5 {
                 invalidateIntrinsicContentSize()
@@ -735,12 +1114,36 @@ private struct TodoTitleTextView: NSViewRepresentable {
             return max(TodoRowLayout.titleLineHeight, ceil(usedHeight))
         }
 
-        func updateTextContainerWidth() {
+        func updateTextContainerWidth() -> Bool {
             guard bounds.width > 0 else {
+                return false
+            }
+
+            let newSize = NSSize(width: bounds.width, height: CGFloat.greatestFiniteMagnitude)
+            guard textContainer?.containerSize != newSize else {
+                return false
+            }
+
+            textContainer?.containerSize = newSize
+            return true
+        }
+
+        func setEditableIfNeeded(_ isEditable: Bool) {
+            if self.isEditable != isEditable {
+                self.isEditable = isEditable
+            }
+
+            if isSelectable != isEditable {
+                isSelectable = isEditable
+            }
+        }
+
+        func setSelectedRangeIfNeeded(_ range: NSRange) {
+            guard selectedRange() != range else {
                 return
             }
 
-            textContainer?.containerSize = NSSize(width: bounds.width, height: CGFloat.greatestFiniteMagnitude)
+            setSelectedRange(range)
         }
 
         private func filePaths(from draggingInfo: NSDraggingInfo) -> [String] {
@@ -757,15 +1160,6 @@ private struct TodoTitleTextView: NSViewRepresentable {
                 return (object as? NSURL)?.path
             }
         }
-    }
-}
-
-private extension NSRange {
-    func clamped(to string: String) -> NSRange {
-        let length = (string as NSString).length
-        let clampedLocation = min(location, length)
-        let clampedLength = min(self.length, length - clampedLocation)
-        return NSRange(location: clampedLocation, length: clampedLength)
     }
 }
 

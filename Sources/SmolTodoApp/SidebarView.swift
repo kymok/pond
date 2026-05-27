@@ -4,30 +4,61 @@ import TodoCore
 
 struct SidebarView: View {
     @EnvironmentObject private var model: TodoAppModel
+    @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @FocusState private var focusedCollection: String?
     @State private var editingCollection: String?
     @State private var editingName = ""
     @State private var newCollectionBeingEdited: String?
+    @State private var showingSettings = false
 
     var body: some View {
-        List(selection: $model.selectedCollection) {
-            Section("Collections") {
-                Label("All", systemImage: "tray.full")
-                    .badge(model.totalUndoneCount)
-                    .tag(TodoAppModel.allCollectionID)
+        VStack(spacing: 0) {
+            List(selection: selectedCollection) {
+                Section("Collections") {
+                    Label("All", systemImage: "tray.full")
+                        .badge(model.totalIncompleteCount)
+                        .tag(TodoAppModel.allCollectionID)
+                        .contextMenu {
+                            Button("Bulk Change Status...") {
+                                model.requestBulkStatusChangeForAll()
+                            }
+                            .disabled(model.items.isEmpty)
+                        }
 
-                ForEach(model.collectionSummaries) { collection in
-                    collectionRow(collection)
-                        .tag(collection.name)
-                }
+                    ForEach(model.collectionSummaries) { collection in
+                        collectionRow(collection)
+                            .tag(collection.name)
+                    }
 
-                Button {
-                    createCollection()
-                } label: {
-                    Label("Create new", systemImage: "plus")
+                    Button {
+                        createCollection()
+                    } label: {
+                        Label("Create New", systemImage: "plus")
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+
+            Menu {
+                Toggle("Show Incomplete Only", isOn: showIncompleteOnlySelection)
+                Toggle("Auto Draft", isOn: $model.usesAutoDraft)
+                Toggle("Always On Top", isOn: $alwaysOnTop)
+
+                Divider()
+
+                Button("Settings...") {
+                    showingSettings = true
+                }
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
         }
     }
 
@@ -49,11 +80,15 @@ struct SidebarView: View {
                     focusEditingCollection(collection.name)
                 }
         } else {
-            Label(collection.name, systemImage: "folder")
-                .badge(collection.undoneCount)
+            Label {
+                Text(collection.name)
+            } icon: {
+                collectionIcon(for: collection)
+            }
+                .badge(collection.incompleteCount)
                 .help(collection.name)
                 .onTapGesture {
-                    model.selectedCollection = collection.name
+                    selectCollection(collection.name)
                 }
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded {
@@ -61,20 +96,65 @@ struct SidebarView: View {
                     }
                 )
                 .contextMenu {
-                    Button("Clear all", role: .destructive) {
-                        model.clearUnlockedItems(in: collection)
-                    }
-                    .disabled(!model.canClearUnlockedItems(in: collection))
-
-                    Button("Clear done", role: .destructive) {
-                        model.clearUnlockedItems(in: collection, doneOnly: true)
-                    }
-                    .disabled(!model.canClearDoneUnlockedItems(in: collection))
-
-                    Button("Delete", role: .destructive) {
-                        model.requestDeleteCollection(collection)
-                    }
+                    CollectionActionMenuItems(collection: collection)
                 }
+        }
+    }
+
+    @ViewBuilder
+    private func collectionIcon(for collection: TodoCollectionSummary) -> some View {
+        switch collection.statusIndicator {
+        case .aborted, .onHold:
+            if let status = collection.statusIndicator {
+                TodoStatusIcon(status: status)
+            }
+        default:
+            Image(systemName: "folder.fill")
+                .foregroundStyle(collection.color.swiftUIColor)
+        }
+    }
+
+    private var selectedCollection: Binding<String> {
+        Binding {
+            model.selectedCollection
+        } set: { selection in
+            selectCollection(selection)
+        }
+    }
+
+    private var showIncompleteOnlySelection: Binding<Bool> {
+        Binding {
+            model.showsIncompleteOnly
+        } set: { showsIncompleteOnly in
+            setShowsIncompleteOnly(showsIncompleteOnly)
+        }
+    }
+
+    private func selectCollection(_ selection: String) {
+        guard model.selectedCollection != selection else {
+            return
+        }
+
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+
+        // Collection switches can replace and reflow the whole detail list, so they should feel instant.
+        withTransaction(transaction) {
+            model.selectedCollection = selection
+        }
+    }
+
+    private func setShowsIncompleteOnly(_ showsIncompleteOnly: Bool) {
+        guard model.showsIncompleteOnly != showsIncompleteOnly else {
+            return
+        }
+
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+
+        // Filter changes can replace and reflow the detail list, so they should feel instant.
+        withTransaction(transaction) {
+            model.showsIncompleteOnly = showsIncompleteOnly
         }
     }
 

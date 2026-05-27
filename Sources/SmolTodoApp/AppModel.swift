@@ -3,26 +3,59 @@ import Dispatch
 import SwiftUI
 import TodoCore
 
+struct TodoBulkStatusChangeRequest: Identifiable {
+    let id = UUID()
+    let title: String
+    let ids: [String]?
+    let collection: String?
+    let itemCount: Int
+}
+
+struct TodoAssigneeEditRequest: Identifiable {
+    let item: TodoItem
+
+    var id: String {
+        item.id
+    }
+}
+
 @MainActor
 final class TodoAppModel: ObservableObject {
     static let allCollectionID = "__all__"
+    private static let usesAutoDraftKey = "usesAutoDraft"
 
     @Published var items: [TodoItem] = []
     @Published var collectionSummaries: [TodoCollectionSummary] = []
-    @Published var selectedCollection = TodoAppModel.allCollectionID
+    @Published var selectedCollection: String
     @Published var searchText = ""
-    @Published var showsUndoneOnly = false
+    @Published var showsIncompleteOnly = true
+    @Published var usesAutoDraft: Bool {
+        didSet {
+            UserDefaults.standard.set(usesAutoDraft, forKey: Self.usesAutoDraftKey)
+        }
+    }
     @Published var errorMessage: String?
     @Published var cliStatus: CLIInstallStatus?
     @Published var collectionDeletionRequest: TodoCollectionSummary?
+    @Published var bulkStatusChangeRequest: TodoBulkStatusChangeRequest?
+    @Published var assigneeEditRequest: TodoAssigneeEditRequest?
+    @Published private var recentlyCompletedVisibleIDs: Set<String> = []
 
     private let store: TodoStore
     private let installer: CommandLineInstaller
     private var storeChangeMonitor: StoreChangeMonitor?
+    private var completedHideTasks: [String: Task<Void, Never>] = [:]
+    private var hasLoadedItems = false
 
-    init(store: TodoStore = TodoStore(), installer: CommandLineInstaller = CommandLineInstaller()) {
+    init(
+        store: TodoStore = TodoStore(),
+        installer: CommandLineInstaller = CommandLineInstaller(),
+        initialSelectedCollection: String = TodoAppModel.allCollectionID
+    ) {
         self.store = store
         self.installer = installer
+        selectedCollection = initialSelectedCollection
+        usesAutoDraft = UserDefaults.standard.object(forKey: Self.usesAutoDraftKey) as? Bool ?? true
         reload()
         refreshCLIStatus()
         startStoreChangeMonitor()
@@ -48,6 +81,10 @@ final class TodoAppModel: ObservableObject {
         return collectionSummaries.first { $0.name == selectedCollectionName }
     }
 
+    func collectionColor(named name: String) -> TodoCollectionColor {
+        collectionSummaries.first { $0.name == name }?.color ?? .gray
+    }
+
     var canDeleteSelectedCollection: Bool {
         selectedCollectionSummary != nil
     }
@@ -57,7 +94,9 @@ final class TodoAppModel: ObservableObject {
 
         return items.filter { item in
             let collectionMatches = selectedCollectionName.map { $0 == item.collection } ?? true
-            let statusMatches = !showsUndoneOnly || !item.isDone
+            let statusMatches = !showsIncompleteOnly
+                || item.status.isIncomplete
+                || recentlyCompletedVisibleIDs.contains(item.id)
             let searchMatches = query.isEmpty
                 || item.title.localizedCaseInsensitiveContains(query)
                 || item.collection.localizedCaseInsensitiveContains(query)
@@ -67,26 +106,16 @@ final class TodoAppModel: ObservableObject {
         }
     }
 
-    var totalUndoneCount: Int {
-        collectionSummaries.reduce(0) { $0 + $1.undoneCount }
-    }
-
-    var selectedUndoneCount: Int {
-        selectedCollectionSummary?.undoneCount ?? totalUndoneCount
-    }
-
-    var titlebarDescription: String {
-        guard selectedUndoneCount > 0 else {
-            return ""
-        }
-
-        let itemLabel = selectedUndoneCount == 1 ? "todo" : "todos"
-        return "\(selectedUndoneCount) undone \(itemLabel)"
+    var totalIncompleteCount: Int {
+        collectionSummaries.reduce(0) { $0 + $1.incompleteCount }
     }
 
     func reload() {
         do {
-            items = try store.items()
+            let previousStatuses = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.status) })
+            let loadedItems = try store.items()
+            updateRecentlyCompletedVisibility(previousStatuses: previousStatuses, loadedItems: loadedItems)
+            items = loadedItems
             collectionSummaries = try store.collectionSummaries()
 
             if selectedCollectionName != nil && !collectionSummaries.contains(where: { $0.name == selectedCollection }) {
@@ -102,20 +131,17 @@ final class TodoAppModel: ObservableObject {
         title: String,
         collection: String? = nil,
         id: String? = nil,
-        allowEmptyTitle: Bool = false
+        allowEmptyTitle: Bool = false,
+        status: TodoStatus = .draft
     ) -> TodoItem? {
-        do {
-            let item = try store.add(
+        updateStore(reloadOnError: false) {
+            try store.add(
                 title: title,
                 collection: collection ?? selectedCollectionName ?? TodoStore.defaultCollection,
                 id: id,
-                allowEmptyTitle: allowEmptyTitle
+                allowEmptyTitle: allowEmptyTitle,
+                status: status
             )
-            reload()
-            return item
-        } catch {
-            errorMessage = error.localizedDescription
-            return nil
         }
     }
 
@@ -128,14 +154,10 @@ final class TodoAppModel: ObservableObject {
     func createCollectionForEditing() -> String? {
         let name = uniqueCollectionName(base: "New Collection")
 
-        do {
+        return updateStore(reloadOnError: false) {
             let createdName = try store.createCollection(name: name)
             selectedCollection = createdName
-            reload()
             return createdName
-        } catch {
-            errorMessage = error.localizedDescription
-            return nil
         }
     }
 
@@ -146,38 +168,22 @@ final class TodoAppModel: ObservableObject {
             return nil
         }
 
-        do {
+        return updateStore(ignoring: isMissingCollection) {
             let finalName = try store.renameCollection(from: oldName, to: newName)
             selectedCollection = finalName
-            reload()
             return finalName
-        } catch TodoStoreError.collectionNotFound {
-            reload()
-            return nil
-        } catch {
-            errorMessage = error.localizedDescription
-            reload()
-            return nil
         }
     }
 
     @discardableResult
     func deleteEmptyCollection(_ name: String) -> Bool {
-        do {
+        updateStore(ignoring: isInvalidCollection) {
             let deleted = try store.deleteEmptyCollection(name: name)
             if deleted && selectedCollection == name {
                 selectedCollection = Self.allCollectionID
             }
-            reload()
             return deleted
-        } catch TodoStoreError.invalidCollection {
-            reload()
-            return false
-        } catch {
-            errorMessage = error.localizedDescription
-            reload()
-            return false
-        }
+        } ?? false
     }
 
     func requestDeleteSelectedCollection() {
@@ -192,28 +198,26 @@ final class TodoAppModel: ObservableObject {
         collectionDeletionRequest = collection
     }
 
-    func canClearUnlockedItems(in collection: TodoCollectionSummary) -> Bool {
-        items.contains { $0.collection == collection.name && !$0.isLocked }
+    func setCollectionColor(_ collection: TodoCollectionSummary, color: TodoCollectionColor) {
+        updateStore(ignoring: isStaleCollection) {
+            try store.setCollectionColor(name: collection.name, color: color)
+        }
     }
 
-    func canClearDoneUnlockedItems(in collection: TodoCollectionSummary) -> Bool {
-        items.contains { $0.collection == collection.name && $0.isDone && !$0.isLocked }
+    func canClearItems(in collection: TodoCollectionSummary) -> Bool {
+        items.contains { $0.collection == collection.name }
+    }
+
+    func canClearCompletedItems(in collection: TodoCollectionSummary) -> Bool {
+        items.contains { $0.collection == collection.name && $0.status == .completed }
     }
 
     @discardableResult
-    func clearUnlockedItems(in collection: TodoCollectionSummary, doneOnly: Bool = false) -> Bool {
-        do {
-            _ = try store.clearUnlockedItems(collection: collection.name, doneOnly: doneOnly)
-            reload()
+    func clearItems(in collection: TodoCollectionSummary, completedOnly: Bool = false) -> Bool {
+        updateStore(ignoring: isNoMatchingTodos) {
+            _ = try store.clearItems(collection: collection.name, completedOnly: completedOnly)
             return true
-        } catch TodoStoreError.noMatchingTodos {
-            reload()
-            return false
-        } catch {
-            errorMessage = error.localizedDescription
-            reload()
-            return false
-        }
+        } ?? false
     }
 
     func cancelDeleteCollection() {
@@ -232,68 +236,145 @@ final class TodoAppModel: ObservableObject {
 
     @discardableResult
     func deleteCollection(_ name: String) -> Bool {
-        do {
+        updateStore(ignoring: isStaleCollection) {
             let deleted = try store.deleteCollection(name: name)
             if deleted {
                 selectedCollection = Self.allCollectionID
             }
-            reload()
             return deleted
-        } catch TodoStoreError.invalidCollection, TodoStoreError.collectionNotFound {
-            reload()
-            return false
-        } catch {
-            errorMessage = error.localizedDescription
-            reload()
-            return false
-        }
+        } ?? false
     }
 
     func makeTodoID() -> String {
         TodoStore.makeID(existing: Set(items.map(\.id)))
     }
 
-    func setDone(_ item: TodoItem, isDone: Bool) {
-        do {
-            try store.setCompletion(isDone: isDone, id: item.id, ifCurrent: item)
-            reload()
-        } catch TodoStoreError.notFound {
-            reload()
-        } catch {
-            errorMessage = error.localizedDescription
+    func advanceStatusFromLeadingClick(_ item: TodoItem) {
+        setStatus(item, status: item.status.leadingStatusClickTarget)
+    }
+
+    func setStatus(_ item: TodoItem, status: TodoStatus) {
+        updateStore(reloadOnError: false, ignoring: isMissingTodo) {
+            try store.setStatus(status, id: item.id, ifCurrent: item)
         }
     }
 
-    func setLocked(_ item: TodoItem, isLocked: Bool) {
-        do {
-            try store.setLock(isLocked: isLocked, id: item.id, ifCurrent: item)
-            reload()
-        } catch TodoStoreError.notFound {
-            reload()
-        } catch {
-            errorMessage = error.localizedDescription
+    func setPriority(_ item: TodoItem, priority: TodoPriority) {
+        _ = withAnimation(.easeInOut(duration: 0.22)) {
+            updateStore(reloadOnError: false, ignoring: isMissingTodo) {
+                try store.setPriority(priority, id: item.id, ifCurrent: item)
+            }
         }
     }
 
-    func rename(_ item: TodoItem, title: String) {
-        do {
-            try store.updateTitle(id: item.id, title: title, ifCurrent: item)
-            reload()
-        } catch TodoStoreError.notFound {
-            reload()
-        } catch {
-            errorMessage = error.localizedDescription
+    func requestAssigneeEdit(_ item: TodoItem) {
+        assigneeEditRequest = TodoAssigneeEditRequest(item: item)
+    }
+
+    func cancelAssigneeEdit() {
+        assigneeEditRequest = nil
+    }
+
+    @discardableResult
+    func setAssignees(_ item: TodoItem, assignees: [String]) -> Bool {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            updateStore(reloadOnError: false, ignoring: isMissingTodo) {
+                let updated = try store.assign(id: item.id, assignees: assignees, ifCurrent: item)
+                return updated != nil
+            } ?? false
+        }
+    }
+
+    func confirmAssigneeEdit(_ item: TodoItem, assignees: [String]) {
+        assigneeEditRequest = nil
+        setAssignees(item, assignees: assignees)
+    }
+
+    var canBulkChangeVisibleStatuses: Bool {
+        !visibleItems.isEmpty
+    }
+
+    func canBulkChangeStatuses(in collection: TodoCollectionSummary) -> Bool {
+        items.contains { $0.collection == collection.name }
+    }
+
+    func requestBulkStatusChangeForAll() {
+        requestBulkStatusChange(title: "All", items: items)
+    }
+
+    func requestBulkStatusChangeForVisibleItems() {
+        requestBulkStatusChange(title: title, items: visibleItems)
+    }
+
+    func requestBulkStatusChange(for collection: TodoCollectionSummary) {
+        let itemCount = items.filter { $0.collection == collection.name }.count
+        guard itemCount > 0 else {
+            return
+        }
+
+        bulkStatusChangeRequest = TodoBulkStatusChangeRequest(
+            title: collection.name,
+            ids: nil,
+            collection: collection.name,
+            itemCount: itemCount
+        )
+    }
+
+    func cancelBulkStatusChange() {
+        bulkStatusChangeRequest = nil
+    }
+
+    @discardableResult
+    func confirmBulkStatusChange(_ replacements: [TodoStatus: TodoStatus]) -> Bool {
+        guard let request = bulkStatusChangeRequest else {
+            return false
+        }
+
+        bulkStatusChangeRequest = nil
+        guard !replacements.isEmpty else {
+            return true
+        }
+
+        return updateStore(ignoring: isNoMatchingTodos) {
+            if let collection = request.collection {
+                try store.setStatuses(replacements, collection: collection)
+            } else {
+                try store.setStatuses(replacements, ids: request.ids ?? [])
+            }
+            return true
+        } ?? false
+    }
+
+    func rename(
+        _ item: TodoItem,
+        title: String,
+        statusAfterEdit: TodoStatus? = nil
+    ) {
+        updateStore(reloadOnError: false, ignoring: isMissingTodo) {
+            try store.updateTitle(id: item.id, title: title, ifCurrent: item, statusAfterEdit: statusAfterEdit)
         }
     }
 
     @discardableResult
-    func renameOrDeleteIfEmpty(_ item: TodoItem, title: String) -> Bool {
+    func renameOrDeleteIfEmpty(
+        _ item: TodoItem,
+        title: String,
+        statusAfterEdit: TodoStatus? = nil
+    ) -> Bool {
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return delete(item)
         }
 
-        rename(item, title: title)
+        rename(item, title: title, statusAfterEdit: statusAfterEdit)
         return false
+    }
+
+    var autoDraftEditStatus: TodoStatus? {
+        usesAutoDraft ? .draft : nil
+    }
+
+    var autoDraftConfirmationStatus: TodoStatus? {
+        usesAutoDraft ? .ready : nil
     }
 
     func move(_ item: TodoItem, collection: String) {
@@ -313,30 +394,24 @@ final class TodoAppModel: ObservableObject {
     }
 
     func reorderItem(id: String, after previousID: String?, before nextID: String?) {
-        do {
+        updateStore(ignoring: isMissingTodo) {
             try store.reorder(id: id, after: previousID, before: nextID)
-            reload()
-        } catch TodoStoreError.notFound {
-            reload()
-        } catch {
-            errorMessage = error.localizedDescription
-            reload()
         }
     }
 
     @discardableResult
     func delete(_ item: TodoItem) -> Bool {
-        do {
-            let deleted = try store.delete(id: item.id, ifCurrent: item)
-            reload()
-            return deleted
-        } catch TodoStoreError.notFound {
-            reload()
-            return false
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
+        updateStore(reloadOnError: false, ignoring: isMissingTodo) {
+            try store.delete(id: item.id, ifCurrent: item)
+        } ?? false
+    }
+
+    @discardableResult
+    func delete(id: String) -> Bool {
+        updateStore(reloadOnError: false, ignoring: isMissingTodo) {
+            try store.delete(id: id)
+            return true
+        } ?? false
     }
 
     func deleteVisibleItems(at offsets: IndexSet) {
@@ -379,6 +454,62 @@ final class TodoAppModel: ObservableObject {
         installer.pathHint
     }
 
+    @discardableResult
+    private func updateStore<T>(
+        reloadOnError: Bool = true,
+        ignoring shouldIgnoreError: (Error) -> Bool = { _ in false },
+        _ update: () throws -> T
+    ) -> T? {
+        do {
+            let result = try update()
+            reload()
+            return result
+        } catch {
+            let isIgnored = shouldIgnoreError(error)
+            if !isIgnored {
+                errorMessage = error.localizedDescription
+            }
+            if reloadOnError || isIgnored {
+                reload()
+            }
+            return nil
+        }
+    }
+
+    private func isMissingTodo(_ error: Error) -> Bool {
+        guard let error = error as? TodoStoreError else {
+            return false
+        }
+
+        if case .notFound = error {
+            return true
+        }
+        return false
+    }
+
+    private func isMissingCollection(_ error: Error) -> Bool {
+        guard let error = error as? TodoStoreError else {
+            return false
+        }
+
+        if case .collectionNotFound = error {
+            return true
+        }
+        return false
+    }
+
+    private func isInvalidCollection(_ error: Error) -> Bool {
+        error as? TodoStoreError == .invalidCollection
+    }
+
+    private func isStaleCollection(_ error: Error) -> Bool {
+        isInvalidCollection(error) || isMissingCollection(error)
+    }
+
+    private func isNoMatchingTodos(_ error: Error) -> Bool {
+        error as? TodoStoreError == .noMatchingTodos
+    }
+
     private func uniqueCollectionName(base: String) -> String {
         let existing = Set(collectionNames)
         guard existing.contains(base) else {
@@ -393,6 +524,60 @@ final class TodoAppModel: ObservableObject {
         return "\(base) \(index)"
     }
 
+    private func updateRecentlyCompletedVisibility(
+        previousStatuses: [String: TodoStatus],
+        loadedItems: [TodoItem]
+    ) {
+        let loadedIDs = Set(loadedItems.map(\.id))
+
+        for id in Array(completedHideTasks.keys) where !loadedIDs.contains(id) {
+            cancelCompletedHide(for: id)
+        }
+
+        for id in Array(recentlyCompletedVisibleIDs) where !loadedIDs.contains(id) {
+            recentlyCompletedVisibleIDs.remove(id)
+        }
+
+        defer {
+            hasLoadedItems = true
+        }
+
+        guard hasLoadedItems else {
+            return
+        }
+
+        for item in loadedItems {
+            if item.status == .completed, previousStatuses[item.id] != .completed {
+                showCompletedItemBeforeHiding(item.id)
+            } else if item.status != .completed {
+                cancelCompletedHide(for: item.id)
+            }
+        }
+    }
+
+    private func showCompletedItemBeforeHiding(_ id: String) {
+        recentlyCompletedVisibleIDs.insert(id)
+        completedHideTasks[id]?.cancel()
+
+        completedHideTasks[id] = Task { @MainActor [weak self] in
+            guard !Task.isCancelled else {
+                return
+            }
+
+            // Keep the item only for the removal animation; there is intentionally no extra grace delay.
+            _ = withAnimation(.easeInOut(duration: 0.22)) {
+                self?.recentlyCompletedVisibleIDs.remove(id)
+            }
+            self?.completedHideTasks[id] = nil
+        }
+    }
+
+    private func cancelCompletedHide(for id: String) {
+        completedHideTasks[id]?.cancel()
+        completedHideTasks[id] = nil
+        recentlyCompletedVisibleIDs.remove(id)
+    }
+
     private func startStoreChangeMonitor() {
         storeChangeMonitor = StoreChangeMonitor(fileURL: store.fileURL) { [weak self] in
             Task { @MainActor [weak self] in
@@ -400,6 +585,130 @@ final class TodoAppModel: ObservableObject {
             }
         }
         storeChangeMonitor?.start()
+    }
+
+    private func requestBulkStatusChange(title: String, items: [TodoItem]) {
+        guard !items.isEmpty else {
+            return
+        }
+
+        bulkStatusChangeRequest = TodoBulkStatusChangeRequest(
+            title: title,
+            ids: items.map(\.id),
+            collection: nil,
+            itemCount: items.count
+        )
+    }
+}
+
+struct CollectionColorMenu: View {
+    @EnvironmentObject private var model: TodoAppModel
+
+    let collection: TodoCollectionSummary
+
+    var body: some View {
+        Menu {
+            Picker("", selection: colorSelection) {
+                ForEach(TodoCollectionColor.allCases) { color in
+                    Label {
+                        Text(color.displayName)
+                    } icon: {
+                        CollectionColorSwatch(color: color, size: 12)
+                    }
+                    .tag(color)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+        } label: {
+            Label {
+                Text("Color")
+            } icon: {
+                CollectionColorSwatch(color: collection.color, size: 10)
+            }
+        }
+    }
+
+    private var colorSelection: Binding<TodoCollectionColor> {
+        Binding {
+            collection.color
+        } set: { color in
+            model.setCollectionColor(collection, color: color)
+        }
+    }
+}
+
+enum CollectionBulkStatusScope {
+    case collection
+    case visibleItems
+}
+
+struct CollectionActionMenuItems: View {
+    @EnvironmentObject private var model: TodoAppModel
+
+    let collection: TodoCollectionSummary
+    var showsCLICommand = false
+    var bulkStatusScope: CollectionBulkStatusScope = .collection
+
+    var body: some View {
+        Button("Copy Example Prompt") {
+            copyToPasteboard(todoExamplePrompt(cliCommand: cliCommand))
+        }
+
+        if showsCLICommand {
+            Button("Copy CLI Command") {
+                copyToPasteboard(cliCommand)
+            }
+        }
+
+        Divider()
+
+        CollectionColorMenu(collection: collection)
+
+        Divider()
+
+        Button("Clear All", role: .destructive) {
+            model.clearItems(in: collection)
+        }
+        .disabled(!model.canClearItems(in: collection))
+
+        Button("Clear Completed", role: .destructive) {
+            model.clearItems(in: collection, completedOnly: true)
+        }
+        .disabled(!model.canClearCompletedItems(in: collection))
+
+        Button("Bulk Change Status...") {
+            requestBulkStatusChange()
+        }
+        .disabled(!canBulkChangeStatuses)
+
+        Divider()
+
+        Button("Delete Collection", role: .destructive) {
+            model.requestDeleteCollection(collection)
+        }
+    }
+
+    private var cliCommand: String {
+        "todo item get --collection \(collection.name.shellEscaped)"
+    }
+
+    private var canBulkChangeStatuses: Bool {
+        switch bulkStatusScope {
+        case .collection:
+            model.canBulkChangeStatuses(in: collection)
+        case .visibleItems:
+            model.canBulkChangeVisibleStatuses
+        }
+    }
+
+    private func requestBulkStatusChange() {
+        switch bulkStatusScope {
+        case .collection:
+            model.requestBulkStatusChange(for: collection)
+        case .visibleItems:
+            model.requestBulkStatusChangeForVisibleItems()
+        }
     }
 }
 

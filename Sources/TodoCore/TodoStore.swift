@@ -5,8 +5,8 @@ public enum TodoStoreError: LocalizedError, Equatable {
     case invalidTitle
     case invalidCollection
     case invalidID(String)
-    case missingState
     case missingTarget
+    case missingUpdate
     case targetConflict
     case noMatchingTodos
     case notFound(String)
@@ -23,10 +23,10 @@ public enum TodoStoreError: LocalizedError, Equatable {
             "Collection name cannot be empty."
         case .invalidID(let id):
             "Todo id '\(id)' is invalid."
-        case .missingState:
-            "At least one todo state is required."
         case .missingTarget:
             "Command requires --collection or at least one id."
+        case .missingUpdate:
+            "Update requires a title, --collection, --status/-s, or --priority."
         case .targetConflict:
             "Use either --collection or ids, not both."
         case .noMatchingTodos:
@@ -85,7 +85,8 @@ public final class TodoStore: @unchecked Sendable {
     }
 
     public func items(
-        status: TodoCompletionFilter? = nil,
+        status: TodoStatus? = nil,
+        priority: TodoPriority? = nil,
         collection: String? = nil,
         ids: [String] = [],
         search: String? = nil
@@ -101,7 +102,11 @@ public final class TodoStore: @unchecked Sendable {
             }
 
             if let status {
-                results = results.filter { $0.isDone == status.isDone }
+                results = results.filter { $0.status == status }
+            }
+
+            if let priority {
+                results = results.filter { $0.priority == priority }
             }
 
             if let collection = normalizedCollectionOrNil(collection) {
@@ -130,7 +135,9 @@ public final class TodoStore: @unchecked Sendable {
                     return TodoCollectionSummary(
                         name: name,
                         totalCount: items.count,
-                        undoneCount: items.filter { !$0.isDone }.count
+                        incompleteCount: items.filter(\.status.isIncomplete).count,
+                        statusIndicator: collectionStatusIndicator(for: items),
+                        color: collectionColor(name, in: file)
                     )
                 }
         }
@@ -161,15 +168,43 @@ public final class TodoStore: @unchecked Sendable {
                 return cleanNewName
             }
 
+            let newNameHadColor = file.collectionColors[cleanNewName] != nil
+            let oldColor = file.collectionColors.removeValue(forKey: cleanOldName)
             let now = Date()
             for index in file.items.indices where file.items[index].collection == cleanOldName {
                 file.items[index].collection = cleanNewName
-                file.items[index].updatedAt = now
+                markItemUpdated(at: index, in: &file, now: now)
             }
 
             file.collections.removeAll { $0 == cleanOldName }
             addCollectionIfMissing(cleanNewName, to: &file)
+            if !newNameHadColor {
+                file.collectionColors[cleanNewName] = oldColor ?? .gray
+            }
             return cleanNewName
+        }
+    }
+
+    @discardableResult
+    public func setCollectionColor(name: String, color: TodoCollectionColor) throws -> TodoCollectionSummary {
+        let cleanName = try normalizedExplicitCollection(name)
+
+        return try withFile(write: true) { file in
+            guard collectionExists(cleanName, in: file) else {
+                throw TodoStoreError.collectionNotFound(cleanName)
+            }
+
+            addCollectionIfMissing(cleanName, to: &file)
+            file.collectionColors[cleanName] = color
+
+            let items = file.items.filter { $0.collection == cleanName }
+            return TodoCollectionSummary(
+                name: cleanName,
+                totalCount: items.count,
+                incompleteCount: items.filter(\.status.isIncomplete).count,
+                statusIndicator: collectionStatusIndicator(for: items),
+                color: color
+            )
         }
     }
 
@@ -184,6 +219,7 @@ public final class TodoStore: @unchecked Sendable {
 
             let originalCount = file.collections.count
             file.collections.removeAll { $0 == cleanName }
+            file.collectionColors.removeValue(forKey: cleanName)
             return file.collections.count != originalCount
         }
     }
@@ -200,6 +236,7 @@ public final class TodoStore: @unchecked Sendable {
             let originalCollectionCount = file.collections.count
             let originalItemCount = file.items.count
             file.collections.removeAll { $0 == cleanName }
+            file.collectionColors.removeValue(forKey: cleanName)
             file.items.removeAll { $0.collection == cleanName }
             return file.collections.count != originalCollectionCount
                 || file.items.count != originalItemCount
@@ -211,7 +248,9 @@ public final class TodoStore: @unchecked Sendable {
         title: String,
         collection: String = TodoStore.defaultCollection,
         id requestedID: String? = nil,
-        allowEmptyTitle: Bool = false
+        allowEmptyTitle: Bool = false,
+        status: TodoStatus = .ready,
+        priority: TodoPriority = .normal
     ) throws -> TodoItem {
         let cleanTitle = allowEmptyTitle ? normalizedExistingTitle(title) : normalizedNewTitle(title)
         guard allowEmptyTitle || !cleanTitle.isEmpty else {
@@ -233,6 +272,8 @@ public final class TodoStore: @unchecked Sendable {
                 id: id,
                 title: cleanTitle,
                 collection: normalizedCollection(collection),
+                priority: priority,
+                status: status,
                 createdAt: now,
                 updatedAt: now
             )
@@ -243,25 +284,107 @@ public final class TodoStore: @unchecked Sendable {
     }
 
     @discardableResult
-    public func updateTitle(id: String, title: String) throws -> TodoItem {
+    public func updateTitle(
+        id: String,
+        title: String,
+        statusAfterEdit: TodoStatus? = .draft
+    ) throws -> TodoItem {
+        try update(id: id, title: title, status: statusAfterEdit)
+    }
+
+    @discardableResult
+    public func updateTitle(
+        id: String,
+        title: String,
+        ifCurrent expectedItem: TodoItem,
+        statusAfterEdit: TodoStatus? = .draft
+    ) throws -> TodoItem? {
+        try update(id: id, title: title, status: statusAfterEdit, ifCurrent: expectedItem)
+    }
+
+    @discardableResult
+    public func assign(id: String, assignees: [String]) throws -> TodoItem {
+        try update(id: id, assignees: assignees)
+    }
+
+    @discardableResult
+    public func assign(id: String, assignees: [String], ifCurrent expectedItem: TodoItem) throws -> TodoItem? {
+        try update(id: id, assignees: assignees, ifCurrent: expectedItem)
+    }
+
+    @discardableResult
+    public func setPriority(_ priority: TodoPriority, id: String, ifCurrent expectedItem: TodoItem) throws -> TodoItem? {
+        try update(id: id, priority: priority, ifCurrent: expectedItem)
+    }
+
+    @discardableResult
+    public func update(
+        id: String,
+        title: String? = nil,
+        collection: String? = nil,
+        status: TodoStatus? = nil,
+        priority: TodoPriority? = nil,
+        assignees: [String]? = nil
+    ) throws -> TodoItem {
+        let cleanTitle = title.map(normalizedExistingTitle)
+        let cleanCollection = collection.map(normalizedCollection)
+        guard cleanTitle != nil || cleanCollection != nil || status != nil || priority != nil || assignees != nil else {
+            throw TodoStoreError.missingUpdate
+        }
+
         return try withFile(write: true) { file in
             let index = try resolveIndex(id, in: file.items)
-            file.items[index].title = normalizedExistingTitle(title)
-            file.items[index].updatedAt = Date()
+            if applyUpdate(
+                title: cleanTitle,
+                collection: cleanCollection,
+                status: status,
+                priority: priority,
+                assignees: assignees,
+                to: index,
+                in: &file
+            ) {
+                markItemUpdated(at: index, in: &file)
+            }
+
             return file.items[index]
         }
     }
 
     @discardableResult
-    public func updateTitle(id: String, title: String, ifCurrent expectedItem: TodoItem) throws -> TodoItem? {
-        let cleanTitle = normalizedExistingTitle(title)
-        return try updateItem(id: id, ifCurrent: expectedItem) { item in
-            guard item.title != cleanTitle else {
-                return false
+    public func update(
+        id: String,
+        title: String? = nil,
+        collection: String? = nil,
+        status: TodoStatus? = nil,
+        priority: TodoPriority? = nil,
+        assignees: [String]? = nil,
+        ifCurrent expectedItem: TodoItem
+    ) throws -> TodoItem? {
+        let cleanTitle = title.map(normalizedExistingTitle)
+        let cleanCollection = collection.map(normalizedCollection)
+        guard cleanTitle != nil || cleanCollection != nil || status != nil || priority != nil || assignees != nil else {
+            throw TodoStoreError.missingUpdate
+        }
+
+        return try withFile(write: true) { file in
+            let index = try resolveIndex(id, in: file.items)
+            guard file.items[index] == expectedItem else {
+                return nil
             }
 
-            item.title = cleanTitle
-            return true
+            if applyUpdate(
+                title: cleanTitle,
+                collection: cleanCollection,
+                status: status,
+                priority: priority,
+                assignees: assignees,
+                to: index,
+                in: &file
+            ) {
+                markItemUpdated(at: index, in: &file)
+            }
+
+            return file.items[index]
         }
     }
 
@@ -270,9 +393,11 @@ public final class TodoStore: @unchecked Sendable {
         try withFile(write: true) { file in
             let index = try resolveIndex(id, in: file.items)
             let cleanCollection = normalizedCollection(collection)
-            file.items[index].collection = cleanCollection
-            file.items[index].updatedAt = Date()
             addCollectionIfMissing(cleanCollection, to: &file)
+            if file.items[index].collection != cleanCollection {
+                file.items[index].collection = cleanCollection
+                markItemUpdated(at: index, in: &file)
+            }
             return file.items[index]
         }
     }
@@ -292,7 +417,7 @@ public final class TodoStore: @unchecked Sendable {
             }
 
             file.items[index].collection = cleanCollection
-            file.items[index].updatedAt = Date()
+            markItemUpdated(at: index, in: &file)
             addCollectionIfMissing(cleanCollection, to: &file)
             return file.items[index]
         }
@@ -322,15 +447,14 @@ public final class TodoStore: @unchecked Sendable {
     }
 
     @discardableResult
-    public func clearUnlockedItems(collection: String, doneOnly: Bool = false) throws -> [TodoItem] {
+    public func clearItems(collection: String, completedOnly: Bool = false) throws -> [TodoItem] {
         let cleanCollection = try normalizedExplicitCollection(collection)
 
         return try withFile(write: true) { file in
             let indexes = file.items.indices.filter { index in
                 let item = file.items[index]
                 return item.collection == cleanCollection
-                    && !item.isLocked
-                    && (!doneOnly || item.isDone)
+                    && (!completedOnly || item.status == .completed)
             }
 
             guard !indexes.isEmpty else {
@@ -360,51 +484,23 @@ public final class TodoStore: @unchecked Sendable {
     }
 
     @discardableResult
-    public func setCompletion(isDone: Bool, ids: [String] = [], collection: String? = nil) throws -> [TodoItem] {
-        try setState(isDone: isDone, ids: ids, collection: collection)
-    }
-
-    @discardableResult
-    public func setCompletion(isDone: Bool, id: String, ifCurrent expectedItem: TodoItem) throws -> TodoItem? {
-        try updateItem(id: id, ifCurrent: expectedItem) { item in
-            guard item.isDone != isDone else {
-                return false
-            }
-
-            item.isDone = isDone
-            return true
-        }
-    }
-
-    @discardableResult
-    public func setLock(isLocked: Bool, ids: [String] = [], collection: String? = nil) throws -> [TodoItem] {
-        try setState(isLocked: isLocked, ids: ids, collection: collection)
-    }
-
-    @discardableResult
-    public func setState(
-        isDone: Bool? = nil,
-        isLocked: Bool? = nil,
+    public func setStatus(
+        _ status: TodoStatus,
         ids: [String] = [],
         collection: String? = nil
     ) throws -> [TodoItem] {
-        guard isDone != nil || isLocked != nil else {
-            throw TodoStoreError.missingState
-        }
-
         let cleanCollection = try targetCollection(ids: ids, collection: collection)
 
         return try withFile(write: true) { file in
             let indexes = try resolveTargetIndexes(ids: ids, collection: cleanCollection, in: file)
             let now = Date()
             for index in indexes {
-                if let isDone {
-                    file.items[index].isDone = isDone
+                guard file.items[index].status != status else {
+                    continue
                 }
-                if let isLocked {
-                    file.items[index].isLocked = isLocked
-                }
-                file.items[index].updatedAt = now
+
+                file.items[index].status = status
+                markItemUpdated(at: index, in: &file, now: now)
             }
 
             return indexes.map { file.items[$0] }
@@ -412,13 +508,69 @@ public final class TodoStore: @unchecked Sendable {
     }
 
     @discardableResult
-    public func setLock(isLocked: Bool, id: String, ifCurrent expectedItem: TodoItem) throws -> TodoItem? {
+    public func setStatuses(
+        _ replacements: [TodoStatus: TodoStatus],
+        ids: [String] = [],
+        collection: String? = nil
+    ) throws -> [TodoItem] {
+        let cleanCollection = try targetCollection(ids: ids, collection: collection)
+        let meaningfulReplacements = replacements.filter { oldStatus, newStatus in
+            oldStatus != newStatus
+        }
+
+        return try withFile(write: true) { file in
+            let targetIndexes = try resolveTargetIndexes(ids: ids, collection: cleanCollection, in: file)
+            let indexes = targetIndexes.filter { meaningfulReplacements[file.items[$0].status] != nil }
+            guard !indexes.isEmpty else {
+                return []
+            }
+
+            let now = Date()
+            for index in indexes {
+                guard let replacement = meaningfulReplacements[file.items[index].status] else {
+                    continue
+                }
+
+                file.items[index].status = replacement
+                markItemUpdated(at: index, in: &file, now: now)
+            }
+
+            return indexes.map { file.items[$0] }
+        }
+    }
+
+    @discardableResult
+    public func setPriority(
+        _ priority: TodoPriority,
+        ids: [String] = [],
+        collection: String? = nil
+    ) throws -> [TodoItem] {
+        let cleanCollection = try targetCollection(ids: ids, collection: collection)
+
+        return try withFile(write: true) { file in
+            let indexes = try resolveTargetIndexes(ids: ids, collection: cleanCollection, in: file)
+            let now = Date()
+            for index in indexes {
+                guard file.items[index].priority != priority else {
+                    continue
+                }
+
+                file.items[index].priority = priority
+                markItemUpdated(at: index, in: &file, now: now)
+            }
+
+            return indexes.map { file.items[$0] }
+        }
+    }
+
+    @discardableResult
+    public func setStatus(_ status: TodoStatus, id: String, ifCurrent expectedItem: TodoItem) throws -> TodoItem? {
         try updateItem(id: id, ifCurrent: expectedItem) { item in
-            guard item.isLocked != isLocked else {
+            guard item.status != status else {
                 return false
             }
 
-            item.isLocked = isLocked
+            item.status = status
             return true
         }
     }
@@ -460,9 +612,11 @@ public final class TodoStore: @unchecked Sendable {
         }
 
         var file = try readFile()
+        let needsMigration = file.needsMigration
         let result = try body(&file)
 
-        if write {
+        if write || needsMigration {
+            file.needsMigration = false
             try writeFile(file)
         }
 
@@ -481,15 +635,76 @@ public final class TodoStore: @unchecked Sendable {
             }
 
             if try update(&file.items[index]) {
-                file.items[index].updatedAt = Date()
+                markItemUpdated(at: index, in: &file)
             }
 
             return file.items[index]
         }
     }
 
+    private func markItemUpdated(at index: Int, in file: inout TodoFile, now: Date = Date()) {
+        file.items[index].updatedAt = now
+        refreshVersion(at: index, in: &file.items)
+    }
+
+    private func refreshVersion(at index: Int, in items: inout [TodoItem]) {
+        var existingVersions = Set(items.map(\.version))
+        existingVersions.remove(items[index].version)
+        items[index].version = TodoItem.makeVersion(existing: existingVersions)
+    }
+
+    private func applyUpdate(
+        title: String?,
+        collection: String?,
+        status: TodoStatus?,
+        priority: TodoPriority?,
+        assignees: [String]?,
+        to index: Int,
+        in file: inout TodoFile
+    ) -> Bool {
+        var changed = false
+
+        if let title, file.items[index].title != title {
+            file.items[index].title = title
+            changed = true
+        }
+
+        if let collection {
+            addCollectionIfMissing(collection, to: &file)
+            if file.items[index].collection != collection {
+                file.items[index].collection = collection
+                changed = true
+            }
+        }
+
+        if let status, file.items[index].status != status {
+            file.items[index].status = status
+            changed = true
+        }
+
+        if let priority, file.items[index].priority != priority {
+            file.items[index].priority = priority
+            changed = true
+        }
+
+        if let assignees {
+            let cleanAssignees = normalizedAssignees(assignees)
+            if file.items[index].assignees != cleanAssignees {
+                file.items[index].assignees = cleanAssignees
+                changed = true
+            }
+        }
+
+        return changed
+    }
+
     private func targetCollection(ids: [String], collection: String?) throws -> String? {
-        let cleanCollection = normalizedCollectionOrNil(collection)
+        let cleanCollection: String?
+        if let collection {
+            cleanCollection = try normalizedExplicitCollection(collection)
+        } else {
+            cleanCollection = nil
+        }
 
         if ids.isEmpty && cleanCollection == nil {
             throw TodoStoreError.missingTarget
@@ -544,13 +759,16 @@ public final class TodoStore: @unchecked Sendable {
 }
 
 private struct TodoFile: Codable {
-    var version = 2
+    var version = 5
     var collections: [String] = []
+    var collectionColors: [String: TodoCollectionColor] = [:]
     var items: [TodoItem] = []
+    var needsMigration = false
 
     private enum CodingKeys: String, CodingKey {
         case version
         case collections
+        case collectionColors
         case items
     }
 
@@ -558,18 +776,38 @@ private struct TodoFile: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let itemVersionProbes = try container.decodeIfPresent([TodoItemVersionProbe].self, forKey: .items) ?? []
         items = try container.decodeIfPresent([TodoItem].self, forKey: .items) ?? []
+        needsMigration = itemVersionProbes.contains { $0.version?.isEmpty ?? true }
         collections = normalizedCollectionList(
             (try container.decodeIfPresent([String].self, forKey: .collections) ?? [])
                 + items.map(\.collection)
+        )
+        let rawColors = try container.decodeIfPresent([String: String].self, forKey: .collectionColors) ?? [:]
+        collectionColors = normalizedCollectionColors(
+            rawColors.compactMapValues { TodoCollectionColor(rawValue: $0) },
+            collections: collections
         )
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(2, forKey: .version)
-        try container.encode(normalizedCollectionList(collections + items.map(\.collection)), forKey: .collections)
+        let collectionNames = normalizedCollectionList(collections + items.map(\.collection))
+        try container.encode(5, forKey: .version)
+        try container.encode(collectionNames, forKey: .collections)
+        try container.encode(
+            normalizedCollectionColors(collectionColors, collections: collectionNames),
+            forKey: .collectionColors
+        )
         try container.encode(items, forKey: .items)
+    }
+}
+
+private struct TodoItemVersionProbe: Decodable {
+    var version: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case version
     }
 }
 
@@ -602,8 +840,18 @@ private func normalizedNewTitle(_ title: String) -> String {
 
 private func normalizedExistingTitle(_ title: String) -> String {
     title
-        .replacingOccurrences(of: "\n", with: " ")
-        .replacingOccurrences(of: "\t", with: " ")
+}
+
+private func normalizedAssignees(_ assignees: [String]) -> [String] {
+    var seen: Set<String> = []
+    return assignees.compactMap { assignee in
+        let clean = assignee.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, seen.insert(clean).inserted else {
+            return nil
+        }
+
+        return clean
+    }
 }
 
 private func normalizedCollection(_ collection: String) -> String {
@@ -647,17 +895,64 @@ private func normalizedCollectionList<S: Sequence>(_ collections: S) -> [String]
 }
 
 private func sortedCollectionNames<S: Sequence>(_ collections: S) -> [String] where S.Element == String {
-    normalizedCollectionList(collections)
+    let names = normalizedCollectionList(collections)
         .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+    return names.filter { $0 == TodoStore.defaultCollection }
+        + names.filter { $0 != TodoStore.defaultCollection }
 }
 
 private func addCollectionIfMissing(_ collection: String, to file: inout TodoFile) {
-    file.collections = normalizedCollectionList(file.collections + [collection])
+    let cleanCollection = normalizedCollection(collection)
+    file.collections = normalizedCollectionList(file.collections + [cleanCollection])
+    if file.collectionColors[cleanCollection] == nil {
+        file.collectionColors[cleanCollection] = .gray
+    }
+}
+
+private func collectionStatusIndicator(for items: [TodoItem]) -> TodoStatus? {
+    if items.contains(where: { $0.status == .aborted }) {
+        return .aborted
+    }
+
+    if items.contains(where: { $0.status == .onHold }) {
+        return .onHold
+    }
+
+    return nil
 }
 
 private func collectionExists(_ collection: String, in file: TodoFile) -> Bool {
     file.collections.contains(collection)
         || file.items.contains { $0.collection == collection }
+}
+
+private func collectionColor(_ collection: String, in file: TodoFile) -> TodoCollectionColor {
+    file.collectionColors[collection] ?? .gray
+}
+
+private func normalizedCollectionColors(
+    _ colors: [String: TodoCollectionColor],
+    collections: [String]
+) -> [String: TodoCollectionColor] {
+    let names = normalizedCollectionList(collections)
+    let nameSet = Set(names)
+    var result: [String: TodoCollectionColor] = [:]
+
+    for (name, color) in colors {
+        let cleanName = normalizedCollection(name)
+        guard nameSet.contains(cleanName), result[cleanName] == nil else {
+            continue
+        }
+
+        result[cleanName] = color
+    }
+
+    for name in names where result[name] == nil {
+        result[name] = .gray
+    }
+
+    return result
 }
 
 private func normalizedSearchOrNil(_ search: String?) -> String? {
