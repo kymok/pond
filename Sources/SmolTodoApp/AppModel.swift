@@ -71,6 +71,19 @@ final class TodoAppModel: ObservableObject {
         collectionSummaries.reduce(0) { $0 + $1.undoneCount }
     }
 
+    var selectedUndoneCount: Int {
+        selectedCollectionSummary?.undoneCount ?? totalUndoneCount
+    }
+
+    var titlebarDescription: String {
+        guard selectedUndoneCount > 0 else {
+            return ""
+        }
+
+        let itemLabel = selectedUndoneCount == 1 ? "todo" : "todos"
+        return "\(selectedUndoneCount) undone \(itemLabel)"
+    }
+
     func reload() {
         do {
             items = try store.items()
