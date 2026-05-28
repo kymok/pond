@@ -10,7 +10,7 @@ struct PondApp: App {
             TaskWindowRoot(initialSelectedCollection: selectedCollectionPersistence.initialSelectedCollection)
                 .environmentObject(selectedCollectionPersistence)
         }
-        .defaultSize(width: 640, height: 360)
+        .defaultSize(PondMainWindowState.initialContentSize)
         .commands {
             TaskCommands()
         }

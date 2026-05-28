@@ -90,6 +90,12 @@ final class TaskAppModel: ObservableObject {
         collectionSummaries.filter(\.isArchived)
     }
 
+    var navigableCollectionIDs: [String] {
+        [Self.allCollectionID]
+            + visibleCollectionSummaries.map(\.name)
+            + (showsArchivedCollections ? archivedCollectionSummaries.map(\.name) : [])
+    }
+
     var selectedCollectionSummary: TaskCollectionSummary? {
         guard let selectedCollectionName else {
             return nil
@@ -100,6 +106,21 @@ final class TaskAppModel: ObservableObject {
 
     func collectionColor(named name: String) -> TaskCollectionColor {
         collectionSummaries.first { $0.name == name }?.color ?? .gray
+    }
+
+    func selectAdjacentCollection(offset: Int) {
+        let collectionIDs = navigableCollectionIDs
+        guard let currentIndex = collectionIDs.firstIndex(of: selectedCollection) else {
+            selectedCollection = collectionIDs.first ?? Self.allCollectionID
+            return
+        }
+
+        let nextIndex = currentIndex + offset
+        guard collectionIDs.indices.contains(nextIndex) else {
+            return
+        }
+
+        selectedCollection = collectionIDs[nextIndex]
     }
 
     var canDeleteSelectedCollection: Bool {
@@ -172,6 +193,7 @@ final class TaskAppModel: ObservableObject {
         id: String? = nil,
         allowEmptyTitle: Bool = false,
         status: TaskStatus = .draft,
+        disablesAnimations: Bool = false,
         completion: @escaping (TaskItem?) -> Void
     ) {
         let store = store
@@ -188,11 +210,11 @@ final class TaskAppModel: ObservableObject {
                         status: status
                     )
                 }.value
-                reload()
+                reload(disablesAnimations: disablesAnimations)
                 completion(item)
             } catch {
                 errorMessage = error.localizedDescription
-                reload()
+                reload(disablesAnimations: disablesAnimations)
                 completion(nil)
             }
         }
@@ -366,12 +388,11 @@ final class TaskAppModel: ObservableObject {
         }
     }
 
-    func addNote(_ item: TaskItem, body: String) {
-        _ = withAnimation(.easeInOut(duration: 0.22)) {
-            updateStore(reloadOnError: false, ignoring: isMissingTask) {
-                try store.addNote(id: item.id, body: body, ifCurrent: item)
-            }
-        }
+    @discardableResult
+    func addNote(_ item: TaskItem, body: String) -> TaskItem? {
+        updateStore(reloadOnError: false, ignoring: isMissingTask) {
+            try store.addNote(id: item.id, body: body, ifCurrent: item)
+        }.flatMap { $0 }
     }
 
     func updateNote(_ item: TaskItem, note: TaskNote, body: String) {
@@ -569,6 +590,19 @@ final class TaskAppModel: ObservableObject {
                 reload()
             }
             return nil
+        }
+    }
+
+    private func reload(disablesAnimations: Bool) {
+        guard disablesAnimations else {
+            reload()
+            return
+        }
+
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            reload()
         }
     }
 
@@ -888,6 +922,7 @@ struct CollectionActionMenuItems: View {
     let collection: TaskCollectionSummary
     var showsCLICommand = false
     var showsExport = false
+    var groupsCollectionActionsAtBottom = false
     var bulkStatusScope: CollectionBulkStatusScope = .collection
 
     var body: some View {
@@ -905,10 +940,8 @@ struct CollectionActionMenuItems: View {
             }
         }
 
-        if showsExport {
-            Button("Export Collection...") {
-                model.exportCollection(collection)
-            }
+        if !groupsCollectionActionsAtBottom {
+            exportButton
         }
 
         Divider()
@@ -917,11 +950,11 @@ struct CollectionActionMenuItems: View {
 
         Divider()
 
-        Button(collection.isArchived ? "Unarchive Collection" : "Archive Collection") {
-            model.setCollectionArchived(collection, isArchived: !collection.isArchived)
-        }
+        if !groupsCollectionActionsAtBottom {
+            archiveButton
 
-        Divider()
+            Divider()
+        }
 
         Button("Clear All", role: .destructive) {
             model.clearItems(in: collection)
@@ -940,6 +973,33 @@ struct CollectionActionMenuItems: View {
 
         Divider()
 
+        if groupsCollectionActionsAtBottom {
+            exportButton
+
+            archiveButton
+
+            deleteButton
+        } else {
+            deleteButton
+        }
+    }
+
+    @ViewBuilder
+    private var exportButton: some View {
+        if showsExport {
+            Button("Export Collection...") {
+                model.exportCollection(collection)
+            }
+        }
+    }
+
+    private var archiveButton: some View {
+        Button(collection.isArchived ? "Unarchive Collection" : "Archive Collection") {
+            model.setCollectionArchived(collection, isArchived: !collection.isArchived)
+        }
+    }
+
+    private var deleteButton: some View {
         Button("Delete Collection", role: .destructive) {
             model.requestDeleteCollection(collection)
         }

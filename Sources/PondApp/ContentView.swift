@@ -22,11 +22,7 @@ struct ContentView: View {
         .frame(minWidth: 480, minHeight: 320)
         .background(WindowLevelController(alwaysOnTop: alwaysOnTop))
         .background(WindowStateController())
-        .background(
-            LocalKeyDownHandler(isActive: model.collectionDeletionRequest != nil) { event in
-                confirmDeleteDialogOnDefaultKey(event)
-            }
-        )
+        .background(LocalKeyDownHandler(isActive: true, onKeyDown: handleGlobalKeyDown))
         .sheet(item: $model.bulkStatusChangeRequest) { request in
             BulkStatusChangeSheet(
                 request: request,
@@ -62,7 +58,6 @@ struct ContentView: View {
                 Button("Delete", role: .destructive) {
                     model.confirmDeleteRequestedCollection()
                 }
-                .keyboardShortcut(.defaultAction)
 
                 Button("Cancel", role: .cancel) {
                     model.cancelDeleteCollection()
@@ -93,17 +88,51 @@ struct ContentView: View {
         )
     }
 
-    private func confirmDeleteDialogOnDefaultKey(_ event: NSEvent) -> Bool {
-        guard model.collectionDeletionRequest != nil, event.isPlainKey else {
+    private func handleGlobalKeyDown(_ event: NSEvent) -> Bool {
+        guard event.window?.sheetParent == nil else {
             return false
         }
 
         switch event.keyCode {
-        case KeyCode.returnKey, KeyCode.keypadEnter:
-            model.confirmDeleteRequestedCollection()
+        case KeyCode.pageUp:
+            guard event.isPlainKey else {
+                return false
+            }
+
+            selectAdjacentCollection(offset: -1)
+            return true
+        case KeyCode.pageDown:
+            guard event.isPlainKey else {
+                return false
+            }
+
+            selectAdjacentCollection(offset: 1)
+            return true
+        case KeyCode.arrowUp:
+            guard event.isCommandOptionOnlyKey else {
+                return false
+            }
+
+            selectAdjacentCollection(offset: -1)
+            return true
+        case KeyCode.arrowDown:
+            guard event.isCommandOptionOnlyKey else {
+                return false
+            }
+
+            selectAdjacentCollection(offset: 1)
             return true
         default:
             return false
+        }
+    }
+
+    private func selectAdjacentCollection(offset: Int) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+
+        withTransaction(transaction) {
+            model.selectAdjacentCollection(offset: offset)
         }
     }
 }

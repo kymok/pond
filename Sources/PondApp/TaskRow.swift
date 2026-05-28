@@ -11,12 +11,16 @@ struct TaskRow: View {
     let updateActiveTitleEdit: (String, String) -> Void
     let clearActiveTitleEdit: (String) -> Void
     let saveTitleChange: (TaskItem, String, TaskFocusField?) -> Void
+    let confirmTitleChange: (TaskItem, String, TaskFocusField?) -> Void
     let moveItemToCollection: (TaskItem, String) -> Void
     let insertDraftBelow: (TaskItem, String) -> Void
-    let titleFocusSelectionBehavior: TaskFocusSelectionBehavior?
-    let consumeTitleFocusSelectionBehavior: () -> Void
+    let titleFocusSelectionBehavior: TaskFocusSelectionRequest?
+    let noteFocusSelectionBehavior: TaskFocusSelectionRequest?
+    let focusTextField: (TaskFocusField, TaskFocusSelectionBehavior) -> Void
+    let consumeFocusSelectionBehavior: (TaskFocusField) -> Void
     let hasVisibleItemAfter: (TaskItem) -> Bool
     let moveFocus: (TaskItem, TaskFocusDirection, TaskFocusSelectionBehavior) -> Bool
+    let moveItem: (TaskItem, TaskFocusDirection) -> Bool
     let deleteAndFocusPrevious: (TaskItem) -> Void
     let deleteEmptyAndMoveFocusDown: (TaskItem, TaskFocusSelectionBehavior) -> Bool
 
@@ -35,16 +39,21 @@ struct TaskRow: View {
     init(
         item: TaskItem,
         isPendingDraft: Bool,
+        activeTitle: String? = nil,
         focusedField: Binding<TaskFocusField?>,
         updateActiveTitleEdit: @escaping (String, String) -> Void,
         clearActiveTitleEdit: @escaping (String) -> Void,
         saveTitleChange: @escaping (TaskItem, String, TaskFocusField?) -> Void,
+        confirmTitleChange: @escaping (TaskItem, String, TaskFocusField?) -> Void,
         moveItemToCollection: @escaping (TaskItem, String) -> Void,
         insertDraftBelow: @escaping (TaskItem, String) -> Void,
-        titleFocusSelectionBehavior: TaskFocusSelectionBehavior?,
-        consumeTitleFocusSelectionBehavior: @escaping () -> Void,
+        titleFocusSelectionBehavior: TaskFocusSelectionRequest?,
+        noteFocusSelectionBehavior: TaskFocusSelectionRequest?,
+        focusTextField: @escaping (TaskFocusField, TaskFocusSelectionBehavior) -> Void,
+        consumeFocusSelectionBehavior: @escaping (TaskFocusField) -> Void,
         hasVisibleItemAfter: @escaping (TaskItem) -> Bool,
         moveFocus: @escaping (TaskItem, TaskFocusDirection, TaskFocusSelectionBehavior) -> Bool,
+        moveItem: @escaping (TaskItem, TaskFocusDirection) -> Bool,
         deleteAndFocusPrevious: @escaping (TaskItem) -> Void,
         deleteEmptyAndMoveFocusDown: @escaping (TaskItem, TaskFocusSelectionBehavior) -> Bool
     ) {
@@ -54,15 +63,19 @@ struct TaskRow: View {
         self.updateActiveTitleEdit = updateActiveTitleEdit
         self.clearActiveTitleEdit = clearActiveTitleEdit
         self.saveTitleChange = saveTitleChange
+        self.confirmTitleChange = confirmTitleChange
         self.moveItemToCollection = moveItemToCollection
         self.insertDraftBelow = insertDraftBelow
         self.titleFocusSelectionBehavior = titleFocusSelectionBehavior
-        self.consumeTitleFocusSelectionBehavior = consumeTitleFocusSelectionBehavior
+        self.noteFocusSelectionBehavior = noteFocusSelectionBehavior
+        self.focusTextField = focusTextField
+        self.consumeFocusSelectionBehavior = consumeFocusSelectionBehavior
         self.hasVisibleItemAfter = hasVisibleItemAfter
         self.moveFocus = moveFocus
+        self.moveItem = moveItem
         self.deleteAndFocusPrevious = deleteAndFocusPrevious
         self.deleteEmptyAndMoveFocusDown = deleteEmptyAndMoveFocusDown
-        _title = State(initialValue: item.title)
+        _title = State(initialValue: activeTitle ?? item.title)
     }
 
     var body: some View {
@@ -200,7 +213,7 @@ struct TaskRow: View {
         .padding(.horizontal, 12)
         .frame(minHeight: TaskRowLayout.rowMinHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .taskRowHitArea(focusTitle)
+        .taskRowHitArea(focusTitle(at:))
         .background(
             FocusedTextFieldKeyHandler(isActive: isCollectionFocusedForKeyHandling) { event, fieldEditor in
                 handleCollectionKeyDown(event, fieldEditor: fieldEditor)
@@ -293,7 +306,7 @@ struct TaskRow: View {
                 isEditable: canEditTitleAndCollection,
                 style: .title(status: item.status),
                 selectionBehavior: titleFocusSelectionBehavior,
-                consumeSelectionBehavior: consumeTitleFocusSelectionBehavior,
+                consumeSelectionBehavior: { consumeFocusSelectionBehavior(.title(item.id)) },
                 focus: {
                     guard canEditTitleAndCollection else {
                         return
@@ -308,6 +321,9 @@ struct TaskRow: View {
                 },
                 onKeyDown: { event, textView in
                     handleTitleKeyDown(event, textView: textView)
+                },
+                onCommand: { commandSelector, textView, event in
+                    handleTitleCommand(commandSelector, textView: textView, event: event)
                 }
             )
             .id(TaskTitleTextViewIdentity(
@@ -319,13 +335,26 @@ struct TaskRow: View {
     }
 
     private var showsNotes: Bool {
-        !item.notes.isEmpty || draftNoteBody != nil
+        !item.notes.isEmpty || draftNoteBody != nil || isNoteFocused
+    }
+
+    private var isNoteFocused: Bool {
+        focusedField.wrappedValue == .note(item.id)
     }
 
     private var notesBlock: some View {
-        noteEditor
-            .animation(.easeInOut(duration: 0.22), value: item.notes.map(\.id))
-            .animation(.easeInOut(duration: 0.22), value: draftNoteBody != nil)
+        HStack(alignment: .top, spacing: 4) {
+            Image(systemName: "square.and.pencil")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: TaskRowLayout.noteLineHeight, alignment: .center)
+                .padding(.vertical, 2)
+
+            noteEditor
+        }
+        .animation(.easeInOut(duration: 0.22), value: item.notes.map(\.id))
+        .animation(.easeInOut(duration: 0.22), value: draftNoteBody != nil)
+        .animation(.easeInOut(duration: 0.22), value: isNoteFocused)
     }
 
     private var noteEditor: some View {
@@ -344,8 +373,8 @@ struct TaskRow: View {
                 isFocused: focusedField.wrappedValue == .note(item.id),
                 isEditable: !isPendingDraft,
                 style: .note,
-                selectionBehavior: nil,
-                consumeSelectionBehavior: {},
+                selectionBehavior: noteFocusSelectionBehavior,
+                consumeSelectionBehavior: { consumeFocusSelectionBehavior(.note(item.id)) },
                 focus: {
                     guard !isPendingDraft else {
                         return
@@ -360,6 +389,9 @@ struct TaskRow: View {
                 },
                 onKeyDown: { event, textView in
                     handleNoteKeyDown(event, textView: textView)
+                },
+                onCommand: { commandSelector, textView, event in
+                    handleNoteCommand(commandSelector, textView: textView, event: event)
                 }
             )
         }
@@ -451,8 +483,7 @@ struct TaskRow: View {
         }
 
         DispatchQueue.main.async {
-            focusedField.wrappedValue = .note(item.id)
-            moveCurrentTextFieldInsertionPointToEnd()
+            focusTextField(.note(item.id), .moveInsertionPointToEnd)
         }
     }
 
@@ -477,15 +508,19 @@ struct TaskRow: View {
                 focusedField.wrappedValue = nil
             }
         } else if cleanBody != note.body {
-            model.updateNote(item, note: note, body: cleanBody)
-            noteBodies[id] = nil
+            withoutNotePersistenceAnimation {
+                model.updateNote(item, note: note, body: cleanBody)
+                clearCachedNoteBodyAfterSave(id)
+            }
         } else {
-            noteBodies[id] = nil
+            clearCachedNoteBodyAfterSave(id)
         }
     }
 
     private func saveDraftNoteIfNeeded(allowsEmptyRemoval: Bool) {
-        let cleanBody = (draftNoteBody ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = draftNoteBody ?? ""
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let focusSelectionBehavior = focusedNoteSelectionBehavior()
 
         guard !cleanBody.isEmpty else {
             guard allowsEmptyRemoval else {
@@ -499,8 +534,24 @@ struct TaskRow: View {
             return
         }
 
-        model.addNote(item, body: cleanBody)
-        draftNoteBody = nil
+        let updatedItem = withoutNotePersistenceAnimation { () -> TaskItem? in
+            let updatedItem = model.addNote(item, body: cleanBody)
+            if focusedField.wrappedValue == .note(item.id),
+               let note = updatedItem?.notes.first {
+                noteBodies[note.id] = body
+            }
+            draftNoteBody = nil
+            return updatedItem
+        }
+
+        if focusedField.wrappedValue == .note(item.id),
+           updatedItem?.notes.first != nil {
+            if let focusSelectionBehavior {
+                DispatchQueue.main.async {
+                    focusTextField(.note(item.id), focusSelectionBehavior)
+                }
+            }
+        }
     }
 
     private func syncNoteBodies(with notes: [TaskNote]) {
@@ -508,16 +559,44 @@ struct TaskRow: View {
         noteBodies = noteBodies.filter { visibleNoteIDs.contains($0.key) }
     }
 
+    private func clearCachedNoteBodyAfterSave(_ id: String) {
+        guard focusedField.wrappedValue != .note(item.id) else {
+            return
+        }
+
+        noteBodies[id] = nil
+    }
+
+    private func focusedNoteSelectionBehavior() -> TaskFocusSelectionBehavior? {
+        guard focusedField.wrappedValue == .note(item.id),
+              let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
+            return nil
+        }
+
+        return .range(textView.selectedRange())
+    }
+
+    private func withoutNotePersistenceAnimation<T>(_ updates: () -> T) -> T {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        return withTransaction(transaction, updates)
+    }
+
     private func focusTitle() {
+        focusTitle(selectionBehavior: .moveInsertionPointToEnd)
+    }
+
+    private func focusTitle(at windowPoint: NSPoint) {
+        focusTitle(selectionBehavior: .nearestInsertionPoint(toWindowPoint: windowPoint))
+    }
+
+    private func focusTitle(selectionBehavior: TaskFocusSelectionBehavior) {
         guard canEditTitleAndCollection else {
             return
         }
 
         updateActiveTitleEdit(item.id, title)
-        focusedField.wrappedValue = .title(item.id)
-        DispatchQueue.main.async {
-            moveCurrentTextFieldInsertionPointToEnd()
-        }
+        focusTextField(.title(item.id), selectionBehavior)
     }
 
     private func clearLockedFocus() {
@@ -543,6 +622,23 @@ struct TaskRow: View {
         clearCurrentTextFieldSelection()
     }
 
+    private func prepareFocusTransition(from textView: NSTextView) {
+        clearTextFieldSelection(textView)
+    }
+
+    private func moveAdjacentFocus(
+        from textView: NSTextView,
+        direction: TaskFocusDirection,
+        selectionBehavior: TaskFocusSelectionBehavior
+    ) -> Bool {
+        guard moveFocus(item, direction, selectionBehavior) else {
+            return false
+        }
+
+        prepareFocusTransition(from: textView)
+        return true
+    }
+
     private func handleTitleKeyDown(_ event: NSEvent, textView: NSTextView) -> Bool {
         guard !textView.hasMarkedText() else {
             return false
@@ -551,12 +647,35 @@ struct TaskRow: View {
         switch event.keyCode {
         case KeyCode.escape:
             return defocus(event)
+        case KeyCode.end:
+            guard event.isPlainKey else {
+                return false
+            }
+
+            syncTitleFocusAndText(from: textView)
+            moveInsertionPointToEnd(textView)
+            return true
+        case KeyCode.tab:
+            guard event.isPlainKey else {
+                return false
+            }
+
+            syncTitleFocusAndText(from: textView)
+            return moveFocusDownFromTitle(
+                textView,
+                selectionBehavior: .moveInsertionPointToEnd,
+                confirmsTitle: true
+            )
         case KeyCode.backspace:
             syncTitleFocusAndText(from: textView)
             return deleteIfEmptyTitleAtStart(event, fieldEditor: textView)
-        case KeyCode.returnKey, KeyCode.keypadEnter:
-            return handleTitleReturn(event, textView: textView)
         case KeyCode.arrowUp:
+            if event.isCommandOnlyKey {
+                syncTitleFocusAndText(from: textView)
+                saveNonEmptyTitleBeforeReordering()
+                return moveItem(item, .up)
+            }
+
             guard event.isPlainKey else {
                 return false
             }
@@ -566,8 +685,14 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocus(item, .up, .selectAll)
+            return moveAdjacentFocus(from: textView, direction: .up, selectionBehavior: .selectAll)
         case KeyCode.arrowDown:
+            if event.isCommandOnlyKey {
+                syncTitleFocusAndText(from: textView)
+                saveNonEmptyTitleBeforeReordering()
+                return moveItem(item, .down)
+            }
+
             guard event.isPlainKey else {
                 return false
             }
@@ -577,10 +702,18 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocusDownFromTitle(event, selectionBehavior: .selectAll)
+            return moveFocusDownFromTitle(textView, selectionBehavior: .selectAll)
         default:
             return false
         }
+    }
+
+    private func handleTitleCommand(_ commandSelector: Selector, textView: NSTextView, event: NSEvent?) -> Bool {
+        guard shouldHandlePlainReturnCommand(commandSelector, textView: textView, event: event) else {
+            return false
+        }
+
+        return handleTitleReturn(textView)
     }
 
     private func handleCollectionKeyDown(_ event: NSEvent, fieldEditor: NSTextView) -> Bool {
@@ -591,18 +724,34 @@ struct TaskRow: View {
         switch event.keyCode {
         case KeyCode.escape:
             return defocus(event)
+        case KeyCode.tab:
+            guard event.isPlainKey else {
+                return false
+            }
+
+            return moveFocusDownFromCollection(fieldEditor, selectionBehavior: .moveInsertionPointToEnd)
         case KeyCode.arrowUp:
+            if event.isCommandOnlyKey {
+                saveNewCollection()
+                return moveItem(item, .up)
+            }
+
             guard event.isPlainKey else {
                 return false
             }
 
-            return moveFocus(item, .up, .selectAll)
+            return moveAdjacentFocus(from: fieldEditor, direction: .up, selectionBehavior: .selectAll)
         case KeyCode.arrowDown:
+            if event.isCommandOnlyKey {
+                saveNewCollection()
+                return moveItem(item, .down)
+            }
+
             guard event.isPlainKey else {
                 return false
             }
 
-            return moveFocus(item, .down, .selectAll)
+            return moveFocusDownFromCollection(fieldEditor, selectionBehavior: .selectAll)
         default:
             return false
         }
@@ -616,20 +765,15 @@ struct TaskRow: View {
         switch event.keyCode {
         case KeyCode.escape:
             return defocus(event)
-        case KeyCode.returnKey, KeyCode.keypadEnter:
-            guard event.isPlainKey else {
-                return false
+        case KeyCode.tab:
+            return moveFocusDownFromNote(event, textView: textView)
+        case KeyCode.arrowUp:
+            if event.isCommandOnlyKey {
+                syncNoteFocusAndText(from: textView)
+                saveNoteIfNeeded(allowsEmptyRemoval: true)
+                return moveItem(item, .up)
             }
 
-            syncNoteFocusAndText(from: textView)
-            saveNoteIfNeeded(allowsEmptyRemoval: true)
-            if hasVisibleItemAfter(item) {
-                _ = moveFocus(item, .down, .moveInsertionPointToEnd)
-            } else {
-                insertDraftBelow(item, title)
-            }
-            return true
-        case KeyCode.arrowUp:
             guard event.isPlainKey else {
                 return false
             }
@@ -639,8 +783,14 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocus(item, .up, .selectAll)
+            return moveAdjacentFocus(from: textView, direction: .up, selectionBehavior: .selectAll)
         case KeyCode.arrowDown:
+            if event.isCommandOnlyKey {
+                syncNoteFocusAndText(from: textView)
+                saveNoteIfNeeded(allowsEmptyRemoval: true)
+                return moveItem(item, .down)
+            }
+
             guard event.isPlainKey else {
                 return false
             }
@@ -650,10 +800,32 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocus(item, .down, .selectAll)
+            return moveFocusDownFromNote(event, textView: textView, selectionBehavior: .selectAll)
         default:
             return false
         }
+    }
+
+    private func handleNoteCommand(_ commandSelector: Selector, textView: NSTextView, event: NSEvent?) -> Bool {
+        guard shouldHandlePlainReturnCommand(commandSelector, textView: textView, event: event) else {
+            return false
+        }
+
+        return moveFocusDownFromNote(textView, selectionBehavior: .moveInsertionPointToEnd)
+    }
+
+    private func shouldHandlePlainReturnCommand(
+        _ commandSelector: Selector,
+        textView: NSTextView,
+        event: NSEvent?
+    ) -> Bool {
+        guard commandSelector.isNewlineInsertionCommand,
+              event?.isPlainReturnKey == true,
+              !textView.hasMarkedText() else {
+            return false
+        }
+
+        return true
     }
 
     private func defocus(_ event: NSEvent) -> Bool {
@@ -741,29 +913,13 @@ struct TaskRow: View {
         return true
     }
 
-    private func handleTitleReturn(_ event: NSEvent, textView: NSTextView) -> Bool {
-        guard event.isPlainKey else {
-            return false
-        }
-
+    private func handleTitleReturn(_ textView: NSTextView) -> Bool {
         syncTitleFocusAndText(from: textView)
-        let currentTitle = textView.string
-        if currentTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return deleteEmptyAndMoveFocusDown(item, .moveInsertionPointToEnd)
-        }
-
-        if hasVisibleItemAfter(item) {
-            _ = moveFocus(item, .down, .moveInsertionPointToEnd)
-            return true
-        }
-
-        cancelAutosave()
-        skipsNextFocusLossSave = true
-        insertDraftBelow(item, currentTitle)
-        if isPendingDraft {
-            resetTitleEditorForNextDraft(textView)
-        }
-        return true
+        return moveFocusDownFromTitle(
+            textView,
+            selectionBehavior: .moveInsertionPointToEnd,
+            confirmsTitle: true
+        )
     }
 
     private func resetTitleEditorForNextDraft(_ textView: NSTextView) {
@@ -775,27 +931,124 @@ struct TaskRow: View {
     }
 
     private func moveFocusDownFromTitle(
-        _ event: NSEvent,
-        selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd
+        _ textView: NSTextView,
+        selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd,
+        confirmsTitle: Bool = false
     ) -> Bool {
-        guard focusedField.wrappedValue == .title(item.id), event.isPlainKey else {
+        guard focusedField.wrappedValue == .title(item.id) else {
             return false
         }
 
-        if isEmptyTitle {
+        let currentTitle = textView.string
+        if currentTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return deleteEmptyAndMoveFocusDown(item, selectionBehavior)
         }
 
+        prepareFocusTransition(from: textView)
+
         if showsNotes {
-            clearCurrentTextFieldSelection()
-            focusedField.wrappedValue = .note(item.id)
-            DispatchQueue.main.async {
-                selectionBehavior.applyToCurrentTextField()
+            if confirmsTitle {
+                confirmTitleForTransition(currentTitle)
             }
+
+            focusTextField(.note(item.id), selectionBehavior)
             return true
         }
 
-        return moveFocus(item, .down, selectionBehavior)
+        if hasVisibleItemAfter(item) {
+            if confirmsTitle {
+                confirmTitleForTransition(currentTitle)
+            }
+
+            _ = moveFocus(item, .down, selectionBehavior)
+            return true
+        }
+
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        if !isPendingDraft {
+            endCurrentTitleEdit(textView)
+        }
+        insertDraftBelow(item, currentTitle)
+        if isPendingDraft {
+            resetTitleEditorForNextDraft(textView)
+        }
+        return true
+    }
+
+    private func endCurrentTitleEdit(_ textView: NSTextView) {
+        moveInsertionPointToEnd(textView)
+        focusedField.wrappedValue = nil
+        textView.window?.makeFirstResponder(nil)
+    }
+
+    private func moveInsertionPointToEnd(_ textView: NSTextView) {
+        let length = (textView.string as NSString).length
+        textView.setSelectedRange(NSRange(location: length, length: 0))
+    }
+
+    private func moveFocusDownFromNote(
+        _ event: NSEvent,
+        textView: NSTextView,
+        selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd
+    ) -> Bool {
+        guard event.isPlainKey else {
+            return false
+        }
+
+        return moveFocusDownFromNote(textView, selectionBehavior: selectionBehavior)
+    }
+
+    private func moveFocusDownFromNote(
+        _ textView: NSTextView,
+        selectionBehavior: TaskFocusSelectionBehavior
+    ) -> Bool {
+        syncNoteFocusAndText(from: textView)
+        prepareFocusTransition(from: textView)
+        saveNoteIfNeeded(allowsEmptyRemoval: true)
+        if moveFocus(item, .down, selectionBehavior) {
+            return true
+        }
+
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        insertDraftBelow(item, title)
+        return true
+    }
+
+    private func moveFocusDownFromCollection(
+        _ fieldEditor: NSTextView,
+        selectionBehavior: TaskFocusSelectionBehavior
+    ) -> Bool {
+        prepareFocusTransition(from: fieldEditor)
+        saveNewCollection()
+        if moveFocus(item, .down, selectionBehavior) {
+            return true
+        }
+
+        guard !isEmptyTitle else {
+            return true
+        }
+
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        insertDraftBelow(item, title)
+        return true
+    }
+
+    private func confirmTitleForTransition(_ currentTitle: String) {
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        confirmTitleChange(item, currentTitle, nil)
+    }
+
+    private func saveNonEmptyTitleBeforeReordering() {
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        cancelAutosave()
+        saveTitleChange(item, title, .title(item.id))
     }
 
     private func saveTitle() {
@@ -1048,6 +1301,13 @@ private struct TaskTitleTextViewIdentity: Hashable {
     var showsCollection: Bool
 }
 
+private extension Selector {
+    var isNewlineInsertionCommand: Bool {
+        self == #selector(NSResponder.insertNewline(_:))
+            || self == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:))
+    }
+}
+
 private struct TaskTextViewStyle {
     let id: String
     let font: NSFont
@@ -1093,11 +1353,12 @@ private struct TaskTitleTextView: NSViewRepresentable {
     let isFocused: Bool
     let isEditable: Bool
     let style: TaskTextViewStyle
-    let selectionBehavior: TaskFocusSelectionBehavior?
+    let selectionBehavior: TaskFocusSelectionRequest?
     let consumeSelectionBehavior: () -> Void
     let focus: () -> Void
     let clearFocusIfCurrent: () -> Void
     let onKeyDown: (NSEvent, NSTextView) -> Bool
+    let onCommand: (Selector, NSTextView, NSEvent?) -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -1131,6 +1392,9 @@ private struct TaskTitleTextView: NSViewRepresentable {
     func updateNSView(_ textView: SelfSizingTextView, context: Context) {
         context.coordinator.parent = self
         textView.onKeyDown = onKeyDown
+        textView.onMouseDown = { [weak coordinator = context.coordinator] in
+            coordinator?.focusFromMouseDown()
+        }
         textView.minimumMeasuredHeight = style.lineHeight
         textView.maximumMeasuredHeight = style.maximumHeight
         textView.minSize = NSSize(width: 0, height: style.lineHeight)
@@ -1155,8 +1419,12 @@ private struct TaskTitleTextView: NSViewRepresentable {
             textView.invalidateIntrinsicContentSize()
         }
 
+        if selectionBehavior == nil || !isFocused {
+            textView.appliedSelectionRequestID = nil
+        }
+
         if isFocused && isEditable {
-            focus(textView, selectionBehavior: selectionBehavior)
+            focus(textView, selectionRequest: selectionBehavior)
         } else if textView.window?.firstResponder === textView {
             textView.window?.makeFirstResponder(nil)
         }
@@ -1171,17 +1439,17 @@ private struct TaskTitleTextView: NSViewRepresentable {
         return CGSize(width: width, height: nsView.measuredHeight(fitting: width))
     }
 
-    private func focus(_ textView: SelfSizingTextView, selectionBehavior: TaskFocusSelectionBehavior?) {
+    private func focus(_ textView: SelfSizingTextView, selectionRequest: TaskFocusSelectionRequest?) {
         if let window = textView.window {
             if window.firstResponder !== textView {
                 window.makeFirstResponder(textView)
             }
-            applySelectionIfNeeded(to: textView, selectionBehavior: selectionBehavior)
+            applySelectionIfNeeded(to: textView, selectionRequest: selectionRequest)
         } else {
             DispatchQueue.main.async {
                 if self.isFocused {
                     textView.window?.makeFirstResponder(textView)
-                    self.applySelectionIfNeeded(to: textView, selectionBehavior: selectionBehavior)
+                    self.applySelectionIfNeeded(to: textView, selectionRequest: selectionRequest)
                 }
             }
         }
@@ -1190,14 +1458,16 @@ private struct TaskTitleTextView: NSViewRepresentable {
     @MainActor
     private func applySelectionIfNeeded(
         to textView: SelfSizingTextView,
-        selectionBehavior: TaskFocusSelectionBehavior?
+        selectionRequest: TaskFocusSelectionRequest?
     ) {
         guard textView.window?.firstResponder === textView,
-              let selectionBehavior else {
+              let selectionRequest,
+              textView.appliedSelectionRequestID != selectionRequest.id else {
             return
         }
 
-        selectionBehavior.apply(to: textView)
+        textView.appliedSelectionRequestID = selectionRequest.id
+        selectionRequest.behavior.apply(to: textView)
         consumeSelectionBehavior()
     }
 
@@ -1241,6 +1511,16 @@ private struct TaskTitleTextView: NSViewRepresentable {
             parent.focus()
         }
 
+        @MainActor
+        func focusFromMouseDown() {
+            guard parent.isEditable else {
+                parent.clearFocusIfCurrent()
+                return
+            }
+
+            parent.focus()
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? SelfSizingTextView else {
                 return
@@ -1276,7 +1556,7 @@ private struct TaskTitleTextView: NSViewRepresentable {
 
                 if self.parent.isFocused,
                    firstResponder == nil || firstResponder === window {
-                    self.parent.focus(textView, selectionBehavior: self.parent.selectionBehavior)
+                    self.parent.focus(textView, selectionRequest: self.parent.selectionBehavior)
                     return
                 }
 
@@ -1295,6 +1575,14 @@ private struct TaskTitleTextView: NSViewRepresentable {
 
             return true
         }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard let textView = textView as? SelfSizingTextView else {
+                return false
+            }
+
+            return parent.onCommand(commandSelector, textView, textView.keyDownEventForCommand)
+        }
     }
 
     final class SelfSizingTextView: NSTextView {
@@ -1302,6 +1590,9 @@ private struct TaskTitleTextView: NSViewRepresentable {
         var minimumMeasuredHeight = TaskRowLayout.titleLineHeight
         var maximumMeasuredHeight: CGFloat?
         var onKeyDown: ((NSEvent, NSTextView) -> Bool)?
+        var onMouseDown: (() -> Void)?
+        var appliedSelectionRequestID: UUID?
+        private(set) var keyDownEventForCommand: NSEvent?
         private var allowsFileDrops = false
 
         override var intrinsicContentSize: NSSize {
@@ -1313,7 +1604,19 @@ private struct TaskTitleTextView: NSViewRepresentable {
                 return
             }
 
+            keyDownEventForCommand = event
+            defer {
+                keyDownEventForCommand = nil
+            }
             super.keyDown(with: event)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            if isEditable {
+                onMouseDown?()
+            }
+
+            super.mouseDown(with: event)
         }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -1432,11 +1735,9 @@ private struct TaskTitleTextView: NSViewRepresentable {
 }
 
 private extension View {
-    func taskRowHitArea(_ focusTitle: @escaping () -> Void) -> some View {
+    func taskRowHitArea(_ focusTitle: @escaping (NSPoint) -> Void) -> some View {
         background {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: focusTitle)
+            TaskRowClickHandler(onClick: focusTitle)
         }
     }
 
@@ -1451,5 +1752,35 @@ private extension View {
             .background(.quaternary, in: Capsule())
             .frame(width: TaskRowLayout.collectionControlWidth)
             .clipped()
+    }
+}
+
+private struct TaskRowClickHandler: NSViewRepresentable {
+    let onClick: (NSPoint) -> Void
+
+    func makeNSView(context: Context) -> ClickView {
+        let view = ClickView()
+        view.onClick = onClick
+        return view
+    }
+
+    func updateNSView(_ nsView: ClickView, context: Context) {
+        nsView.onClick = onClick
+    }
+
+    final class ClickView: NSView {
+        var onClick: (NSPoint) -> Void = { _ in }
+
+        override var acceptsFirstResponder: Bool {
+            false
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            bounds.contains(point) ? self : nil
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            onClick(event.locationInWindow)
+        }
     }
 }

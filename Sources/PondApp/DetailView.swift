@@ -8,11 +8,9 @@ struct DetailView: View {
     @State private var focusedField: TaskFocusField?
     @State private var pendingDraftFocusID: String?
     @State private var activeTitleEdit: ActiveTaskTitleEdit?
-    @State private var pendingTitleFocusSelection: [String: TaskFocusSelectionBehavior] = [:]
-    @State private var draftItem: TaskItem?
-    @State private var draftPreviousItemID: String?
-    @State private var committedDraftItems: [TaskItem] = []
-    @State private var committedDraftPreviousItemIDs: [String: String?] = [:]
+    @State private var pendingFocusSelection: [TaskFocusField: TaskFocusSelectionRequest] = [:]
+    @State private var activeDraft: ActiveDraftTask?
+    @State private var committedDrafts: [CommittedDraftTask] = []
     @State private var pendingScrollItemID: String?
     @State private var draggedItemID: String?
     @State private var didReorderDraggedItem = false
@@ -20,12 +18,11 @@ struct DetailView: View {
     private var visibleStoredItems: [TaskItem] {
         let baseItems = model.visibleItems
         let pinnedIDs = Set([focusedField?.itemID, pendingDraftFocusID].compactMap { $0 })
-        let visibleCommittedDrafts = committedDraftItems.filter { item in
-            !hasStoredItem(id: item.id) && model.itemIsVisible(item)
+        let visibleCommittedDrafts = committedDrafts.filter { draft in
+            !hasStoredItem(id: draft.id) && model.itemIsVisible(draft.item)
         }
         let visibleItems = baseItems.insertingCommittedDrafts(
-            visibleCommittedDrafts,
-            previousItemIDs: committedDraftPreviousItemIDs
+            visibleCommittedDrafts
         )
 
         if pinnedIDs.isEmpty {
@@ -48,12 +45,12 @@ struct DetailView: View {
 
             return model.selectedCollectionName.map { $0 == item.collection } ?? true
         }
-        .insertingCommittedDrafts(visibleCommittedDrafts, previousItemIDs: committedDraftPreviousItemIDs)
+        .insertingCommittedDrafts(visibleCommittedDrafts)
     }
 
     private var visibleItems: [TaskItem] {
         if let pendingDraftItem {
-            return visibleStoredItems.insertingDraft(pendingDraftItem, after: draftPreviousItemID)
+            return visibleStoredItems.insertingDraft(pendingDraftItem, after: activeDraft?.previousItemID)
         }
 
         return visibleStoredItems
@@ -103,10 +100,10 @@ struct DetailView: View {
             }
         }
         .navigationTitle(model.title)
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
             DetailToolbar()
         }
+        .background(LocalKeyDownHandler(isActive: true, onKeyDown: handleKeyDown))
     }
 
     @ViewBuilder
@@ -116,21 +113,24 @@ struct DetailView: View {
         let row = TaskRow(
             item: item,
             isPendingDraft: itemIsPendingDraft,
+            activeTitle: activeTitle(for: item),
             focusedField: $focusedField,
             updateActiveTitleEdit: updateActiveTitleEdit,
             clearActiveTitleEdit: clearActiveTitleEdit,
             saveTitleChange: saveTitle,
+            confirmTitleChange: confirmTitle,
             moveItemToCollection: moveToCollection,
             insertDraftBelow: insertDraftBelow,
-            titleFocusSelectionBehavior: pendingTitleFocusSelection[item.id],
-            consumeTitleFocusSelectionBehavior: { pendingTitleFocusSelection[item.id] = nil },
+            titleFocusSelectionBehavior: pendingFocusSelection[.title(item.id)],
+            noteFocusSelectionBehavior: pendingFocusSelection[.note(item.id)],
+            focusTextField: focusTextField,
+            consumeFocusSelectionBehavior: { pendingFocusSelection[$0] = nil },
             hasVisibleItemAfter: hasVisibleItemAfter,
             moveFocus: moveFocus,
+            moveItem: moveItem,
             deleteAndFocusPrevious: deleteAndFocusPrevious,
             deleteEmptyAndMoveFocusDown: deleteEmptyAndMoveFocusDown
         )
-        .id(TaskRowRenderIdentity(itemID: item.id, isPendingDraft: itemIsPendingDraft))
-        .id(item.id)
         .transition(
             .asymmetric(
                 insertion: .identity,
@@ -201,12 +201,54 @@ struct DetailView: View {
         selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd
     ) {
         focusedField = field
-        if case .title(let itemID) = field {
-            pendingTitleFocusSelection[itemID] = selectionBehavior
+        pendingFocusSelection[field] = TaskFocusSelectionRequest(behavior: selectionBehavior)
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard event.window?.sheetParent == nil else {
+            return false
         }
-        DispatchQueue.main.async {
-            selectionBehavior.applyToCurrentTextField()
+
+        if event.keyCode == KeyCode.n, event.isCommandOptionOnlyKey {
+            return focusNoteForFocusedItem()
         }
+
+        guard event.isCommandOnlyKey else {
+            return false
+        }
+
+        switch event.keyCode {
+        case KeyCode.n:
+            materializeDraft(collection: model.selectedCollectionName ?? TaskStore.defaultCollection)
+            return true
+        case KeyCode.d:
+            return setFocusedStoredItemStatus(.draft)
+        case KeyCode.r:
+            return setFocusedStoredItemStatus(.ready)
+        default:
+            return false
+        }
+    }
+
+    private func focusNoteForFocusedItem() -> Bool {
+        guard let itemID = focusedField?.itemID,
+              model.items.contains(where: { $0.id == itemID }) else {
+            return false
+        }
+
+        clearCurrentTextFieldSelection()
+        focusTextField(.note(itemID), selectionBehavior: .moveInsertionPointToEnd)
+        return true
+    }
+
+    private func setFocusedStoredItemStatus(_ status: TaskStatus) -> Bool {
+        guard let itemID = focusedField?.itemID,
+              let item = model.items.first(where: { $0.id == itemID }) else {
+            return false
+        }
+
+        model.setStatus(item, status: status)
+        return true
     }
 
     private func materializeDraft(after previousItemID: String? = nil, collection: String? = nil) {
@@ -223,14 +265,18 @@ struct DetailView: View {
         }
 
         let itemID = model.makeTaskID()
-        pendingDraftFocusID = itemID
-        pendingScrollItemID = itemID
-        draftPreviousItemID = previousItemID
-        draftItem = TaskItem(
-            id: itemID,
-            title: "",
-            collection: collection ?? collectionForNewDraft(after: previousItemID)
-        )
+        withoutTaskListAnimation {
+            pendingDraftFocusID = itemID
+            pendingScrollItemID = itemID
+            activeDraft = ActiveDraftTask(
+                item: TaskItem(
+                    id: itemID,
+                    title: "",
+                    collection: collection ?? collectionForNewDraft(after: previousItemID)
+                ),
+                previousItemID: previousItemID
+            )
+        }
     }
 
     private func collectionForNewDraft(after previousItemID: String?) -> String {
@@ -247,10 +293,12 @@ struct DetailView: View {
     }
 
     private func createTaskFromDroppedFile(_ fileURL: URL) {
-        guard let item = model.createTask(
-            title: fileURL.lastPathComponent,
-            collection: collectionForNewDraft(after: nil)
-        ) else {
+        guard let item = withoutTaskListAnimation({
+            model.createTask(
+                title: fileURL.lastPathComponent,
+                collection: collectionForNewDraft(after: nil)
+            )
+        }) else {
             return
         }
 
@@ -300,7 +348,7 @@ struct DetailView: View {
         }
 
         let draftIsFocused = focusedField == .title(pendingDraftItem.id)
-        guard draftIsFocused || draftPreviousItemID == draggedItem.id else {
+        guard draftIsFocused || activeDraft?.previousItemID == draggedItem.id else {
             return
         }
 
@@ -321,6 +369,10 @@ struct DetailView: View {
         activeTitleEdit?.id == item.id ? activeTitleEdit?.title ?? item.title : item.title
     }
 
+    private func activeTitle(for item: TaskItem) -> String? {
+        activeTitleEdit?.id == item.id ? activeTitleEdit?.title : nil
+    }
+
     private func updateActiveTitleEdit(id: String, title: String) {
         activeTitleEdit = ActiveTaskTitleEdit(id: id, title: title)
     }
@@ -332,14 +384,18 @@ struct DetailView: View {
     }
 
     private var pendingDraftItem: TaskItem? {
-        guard let draftItem, !hasStoredItem(id: draftItem.id) else {
+        guard let activeDraft, !hasStoredItem(id: activeDraft.id) else {
             return nil
         }
 
-        return draftItem
+        return activeDraft.item
     }
 
     private func isPendingDraft(_ item: TaskItem) -> Bool {
+        !hasStoredItem(id: item.id)
+    }
+
+    private func isActiveDraft(_ item: TaskItem) -> Bool {
         pendingDraftItem?.id == item.id
     }
 
@@ -348,11 +404,28 @@ struct DetailView: View {
     }
 
     private func saveTitle(_ item: TaskItem, _ title: String, _ newFocus: TaskFocusField?) {
-        if isPendingDraft(item) {
+        if isActiveDraft(item) {
             saveDraft(item, title: title, newFocus: newFocus)
-        } else {
+        } else if hasStoredItem(id: item.id) {
             let statusAfterEdit = title == item.title ? nil : model.autoDraftEditStatus
             model.renameOrDeleteIfEmpty(item, title: title, statusAfterEdit: statusAfterEdit)
+        }
+    }
+
+    private func confirmTitle(_ item: TaskItem, _ title: String, _ newFocus: TaskFocusField?) {
+        if isActiveDraft(item) {
+            saveDraft(
+                item,
+                title: title,
+                newFocus: newFocus,
+                status: model.autoDraftConfirmationStatus ?? .draft
+            )
+        } else if hasStoredItem(id: item.id) {
+            model.renameOrDeleteIfEmpty(
+                item,
+                title: title,
+                statusAfterEdit: model.autoDraftConfirmationStatus
+            )
         }
     }
 
@@ -362,7 +435,7 @@ struct DetailView: View {
         newFocus: TaskFocusField?,
         status: TaskStatus = .draft
     ) {
-        guard isPendingDraft(item) else {
+        guard isActiveDraft(item) else {
             return
         }
 
@@ -374,29 +447,39 @@ struct DetailView: View {
             return
         }
 
-        let collection = draftItem?.collection ?? item.collection
-        let previousItemID = draftPreviousItemID
+        let collection = activeDraft?.item.collection ?? item.collection
+        let previousItemID = activeDraft?.previousItemID
         let focusSelectionBehavior = titleFocusSelectionBehavior(for: item, fallback: .moveInsertionPointToEnd)
-        discardDraft(item.id)
 
-        if model.createTask(title: title, collection: collection, id: item.id, status: status) != nil {
-            if let previousItemID {
+        let createdItem = withoutTaskListAnimation {
+            discardDraft(item.id, clearsActiveTitleEdit: newFocus != .title(item.id))
+            let createdItem = model.createTask(title: title, collection: collection, id: item.id, status: status)
+
+            if createdItem != nil, let previousItemID {
                 model.reorderItem(id: item.id, after: previousItemID, before: nil)
             }
 
+            return createdItem
+        }
+
+        if createdItem != nil {
             if newFocus == .title(item.id) {
                 focusTextField(.title(item.id), selectionBehavior: focusSelectionBehavior)
             }
         } else {
-            draftItem = TaskItem(
-                id: item.id,
-                title: title,
-                collection: collection,
-                status: item.status,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt
-            )
-            draftPreviousItemID = previousItemID
+            withoutTaskListAnimation {
+                activeDraft = ActiveDraftTask(
+                    item: TaskItem(
+                        id: item.id,
+                        title: title,
+                        collection: collection,
+                        status: item.status,
+                        createdAt: item.createdAt,
+                        updatedAt: item.updatedAt
+                    ),
+                    previousItemID: previousItemID
+                )
+            }
         }
     }
 
@@ -412,35 +495,36 @@ struct DetailView: View {
         return .range(textView.selectedRange())
     }
 
-    private func discardDraft(_ id: String) {
-        if draftItem?.id == id {
-            draftItem = nil
-            draftPreviousItemID = nil
+    private func discardDraft(_ id: String, clearsActiveTitleEdit: Bool = true) {
+        if activeDraft?.id == id {
+            activeDraft = nil
         }
 
         if pendingDraftFocusID == id {
             pendingDraftFocusID = nil
         }
 
-        clearActiveTitleEdit(id: id)
+        if clearsActiveTitleEdit {
+            clearActiveTitleEdit(id: id)
+        }
     }
 
     private func moveToCollection(_ item: TaskItem, _ collection: String) {
-        if isPendingDraft(item) {
-            draftItem?.collection = collection
-        } else {
+        if isActiveDraft(item) {
+            activeDraft?.item.collection = collection
+        } else if hasStoredItem(id: item.id) {
             model.move(item, collection: collection)
         }
     }
 
     private func insertDraftBelow(_ item: TaskItem, title: String) {
-        if isPendingDraft(item) {
+        if isActiveDraft(item) {
             commitPendingDraftAndMaterializeNext(
                 item,
                 title: title,
                 status: model.autoDraftConfirmationStatus ?? .draft
             )
-        } else {
+        } else if hasStoredItem(id: item.id) {
             model.renameOrDeleteIfEmpty(item, title: title, statusAfterEdit: model.autoDraftConfirmationStatus)
             materializeDraft(after: item.id)
         }
@@ -457,8 +541,8 @@ struct DetailView: View {
             return
         }
 
-        let collection = draftItem?.collection ?? item.collection
-        let previousItemID = draftPreviousItemID
+        let collection = activeDraft?.item.collection ?? item.collection
+        let previousItemID = activeDraft?.previousItemID
         let committedItemID = uniqueDraftCommitID(excluding: item.id)
         let committedItem = TaskItem(
             id: committedItemID,
@@ -469,29 +553,34 @@ struct DetailView: View {
             updatedAt: item.updatedAt
         )
 
-        committedDraftItems.append(committedItem)
-        committedDraftPreviousItemIDs[committedItemID] = previousItemID
-        draftPreviousItemID = committedItemID
-        draftItem = TaskItem(id: item.id, title: "", collection: collection)
+        withoutTaskListAnimation {
+            committedDrafts.append(CommittedDraftTask(item: committedItem, previousItemID: previousItemID))
+            activeDraft = ActiveDraftTask(
+                item: TaskItem(id: item.id, title: "", collection: collection),
+                previousItemID: committedItemID
+            )
+        }
 
         model.createTaskInBackground(
             title: title,
             collection: collection,
             id: committedItemID,
-            status: status
+            status: status,
+            disablesAnimations: true
         ) { createdItem in
-            if createdItem != nil, let previousItemID {
-                model.reorderItem(id: committedItemID, after: previousItemID, before: nil)
-            }
+            withoutTaskListAnimation {
+                if createdItem != nil, let previousItemID {
+                    model.reorderItem(id: committedItemID, after: previousItemID, before: nil)
+                }
 
-            committedDraftItems.removeAll { $0.id == committedItemID }
-            committedDraftPreviousItemIDs[committedItemID] = nil
+                committedDrafts.removeAll { $0.id == committedItemID }
+            }
         }
     }
 
     private func uniqueDraftCommitID(excluding draftID: String) -> String {
         var id = model.makeTaskID()
-        while id == draftID || committedDraftItems.contains(where: { $0.id == id }) {
+        while id == draftID || committedDrafts.contains(where: { $0.id == id }) {
             id = model.makeTaskID()
         }
         return id
@@ -503,7 +592,7 @@ struct DetailView: View {
             return false
         }
 
-        return visibleItems.indices.contains(index + 1)
+        return focusTarget(in: visibleItems, from: index, direction: .down, selectionBehavior: .moveInsertionPointToEnd) != nil
     }
 
     @discardableResult
@@ -519,46 +608,92 @@ struct DetailView: View {
 
         switch direction {
         case .up:
-            if focusedField == .note(item.id) {
-                clearCurrentTextFieldSelection()
+            if focusedField == .note(item.id), canFocusTitle(of: item) {
                 focusTextField(.title(item.id), selectionBehavior: selectionBehavior)
                 return true
             }
 
-            guard index > 0 else {
+            guard let target = focusTarget(
+                in: visibleItems,
+                from: index,
+                direction: .up,
+                selectionBehavior: selectionBehavior
+            ) else {
                 return false
             }
 
-            clearCurrentTextFieldSelection()
-            let previousItem = visibleItems[index - 1]
-            focusTextField(
-                previousItem.notes.isEmpty ? .title(previousItem.id) : .note(previousItem.id),
-                selectionBehavior: selectionBehavior
-            )
+            focusTextField(target.field, selectionBehavior: target.selectionBehavior)
             return true
 
         case .down:
             if focusedField == .title(item.id), !item.notes.isEmpty {
-                clearCurrentTextFieldSelection()
                 focusTextField(.note(item.id), selectionBehavior: selectionBehavior)
                 return true
             }
 
-            guard visibleItems.indices.contains(index + 1) else {
+            guard let target = focusTarget(
+                in: visibleItems,
+                from: index,
+                direction: .down,
+                selectionBehavior: selectionBehavior
+            ) else {
                 return false
             }
 
-            clearCurrentTextFieldSelection()
-            focusTextField(.title(visibleItems[index + 1].id), selectionBehavior: selectionBehavior)
+            focusTextField(target.field, selectionBehavior: target.selectionBehavior)
             return true
         }
+    }
+
+    private func focusTarget(
+        in visibleItems: [TaskItem],
+        from index: Int,
+        direction: TaskFocusDirection,
+        selectionBehavior: TaskFocusSelectionBehavior
+    ) -> (field: TaskFocusField, selectionBehavior: TaskFocusSelectionBehavior)? {
+        let candidateIndexes: StrideThrough<Int>
+        switch direction {
+        case .up:
+            guard index > 0 else {
+                return nil
+            }
+            candidateIndexes = stride(from: index - 1, through: 0, by: -1)
+        case .down:
+            guard visibleItems.indices.contains(index + 1) else {
+                return nil
+            }
+            candidateIndexes = stride(from: index + 1, through: visibleItems.count - 1, by: 1)
+        }
+
+        for candidateIndex in candidateIndexes {
+            let candidate = visibleItems[candidateIndex]
+            guard canFocusTitle(of: candidate) else {
+                continue
+            }
+
+            switch direction {
+            case .up:
+                return (
+                    candidate.notes.isEmpty ? .title(candidate.id) : .note(candidate.id),
+                    selectionBehavior
+                )
+            case .down:
+                return (.title(candidate.id), selectionBehavior)
+            }
+        }
+
+        return nil
+    }
+
+    private func canFocusTitle(of item: TaskItem) -> Bool {
+        isPendingDraft(item) || (item.status != .inProgress && item.status != .completed)
     }
 
     private func deleteAndFocusPrevious(_ item: TaskItem) {
         let focusTarget = focusTargetAfterDeleting(item)
         let deleted: Bool
 
-        if isPendingDraft(item) {
+        if isActiveDraft(item) {
             discardDraft(item.id)
             deleted = true
         } else if editedTitle(for: item).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -585,13 +720,17 @@ struct DetailView: View {
             return false
         }
 
-        guard visibleItems.indices.contains(index + 1) else {
+        guard let focusTarget = focusTarget(
+            in: visibleItems,
+            from: index,
+            direction: .down,
+            selectionBehavior: selectionBehavior
+        ) else {
             return true
         }
 
-        let focusTarget = TaskFocusField.title(visibleItems[index + 1].id)
         let deleted: Bool
-        if isPendingDraft(item) {
+        if isActiveDraft(item) {
             discardDraft(item.id)
             deleted = true
         } else if editedTitle(for: item).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -602,7 +741,7 @@ struct DetailView: View {
 
         if deleted {
             clearActiveTitleEdit(id: item.id)
-            focusTextField(focusTarget, selectionBehavior: selectionBehavior)
+            focusTextField(focusTarget.field, selectionBehavior: focusTarget.selectionBehavior)
         }
 
         return true
@@ -632,11 +771,65 @@ struct DetailView: View {
             model.reorderItem(id: id, after: previousID, before: nextID)
         }
     }
+
+    private func moveItem(_ item: TaskItem, direction: TaskFocusDirection) -> Bool {
+        guard hasStoredItem(id: item.id) else {
+            return false
+        }
+
+        let storedVisibleItems = visibleItems.filter { hasStoredItem(id: $0.id) }
+        guard let index = storedVisibleItems.firstIndex(where: { $0.id == item.id }) else {
+            return false
+        }
+
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = index - 1
+        case .down:
+            targetIndex = index + 1
+        }
+        guard storedVisibleItems.indices.contains(targetIndex) else {
+            return true
+        }
+
+        var reorderedItems = storedVisibleItems
+        let movedItem = reorderedItems.remove(at: index)
+        reorderedItems.insert(movedItem, at: targetIndex)
+
+        guard let newIndex = reorderedItems.firstIndex(where: { $0.id == item.id }) else {
+            return false
+        }
+
+        let previousID = newIndex > 0 ? reorderedItems[newIndex - 1].id : nil
+        let nextID = reorderedItems.indices.contains(newIndex + 1) ? reorderedItems[newIndex + 1].id : nil
+        reorderItem(item.id, previousID, nextID)
+        return true
+    }
+
+    private func withoutTaskListAnimation<T>(_ updates: () -> T) -> T {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        return withTransaction(transaction, updates)
+    }
 }
 
-private struct TaskRowRenderIdentity: Hashable {
-    var itemID: String
-    var isPendingDraft: Bool
+private struct ActiveDraftTask {
+    var item: TaskItem
+    var previousItemID: String?
+
+    var id: String {
+        item.id
+    }
+}
+
+private struct CommittedDraftTask: Identifiable {
+    var item: TaskItem
+    var previousItemID: String?
+
+    var id: String {
+        item.id
+    }
 }
 
 private extension Array where Element == TaskItem {
@@ -651,16 +844,13 @@ private extension Array where Element == TaskItem {
         return items
     }
 
-    func insertingCommittedDrafts(
-        _ drafts: [TaskItem],
-        previousItemIDs: [String: String?]
-    ) -> [TaskItem] {
+    func insertingCommittedDrafts(_ drafts: [CommittedDraftTask]) -> [TaskItem] {
         drafts.reduce(self) { items, draft in
             guard !items.contains(where: { $0.id == draft.id }) else {
                 return items
             }
 
-            return items.insertingDraft(draft, after: previousItemIDs[draft.id] ?? nil)
+            return items.insertingDraft(draft.item, after: draft.previousItemID)
         }
     }
 }
@@ -669,28 +859,164 @@ private struct DetailToolbar: ToolbarContent {
     @EnvironmentObject private var model: TaskAppModel
 
     var body: some ToolbarContent {
-        ToolbarItem {
-            Menu {
-                if let collection = model.selectedCollectionSummary {
-                    CollectionActionMenuItems(
-                        collection: collection,
-                        showsCLICommand: true,
-                        showsExport: true,
-                        bulkStatusScope: .visibleItems
-                    )
-                } else {
-                    Divider()
+        ToolbarItem(id: "taskOptions") {
+            taskOptionsMenu
+        }
 
-                    Button("Bulk Change Status...") {
-                        model.requestBulkStatusChangeForVisibleItems()
-                    }
-                    .disabled(!model.canBulkChangeVisibleStatuses)
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.fixed)
+        }
+
+        ToolbarItem(id: "taskSearch") {
+            ToolbarSearchField(text: $model.searchText)
+                .frame(width: 180)
+                .padding(.leading, searchLeadingPadding)
+                .help("Search")
+        }
+    }
+
+    private var searchLeadingPadding: CGFloat {
+        if #available(macOS 26.0, *) {
+            return 0
+        }
+
+        return 12
+    }
+
+    private var taskOptionsMenu: some View {
+        Menu {
+            if let collection = model.selectedCollectionSummary {
+                CollectionActionMenuItems(
+                    collection: collection,
+                    showsCLICommand: true,
+                    showsExport: true,
+                    groupsCollectionActionsAtBottom: true,
+                    bulkStatusScope: .visibleItems
+                )
+            } else {
+                Divider()
+
+                Button("Bulk Change Status...") {
+                    model.requestBulkStatusChangeForVisibleItems()
                 }
-            } label: {
-                Image(systemName: "ellipsis")
+                .disabled(!model.canBulkChangeVisibleStatuses)
             }
-            .menuIndicator(.hidden)
-            .help("Task options")
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .menuIndicator(.hidden)
+        .help("Task options")
+    }
+}
+
+private struct ToolbarSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> SafeSearchField {
+        let searchField = SafeSearchField()
+        searchField.placeholderString = "Search"
+        searchField.delegate = context.coordinator
+        searchField.target = context.coordinator
+        searchField.action = #selector(Coordinator.searchFieldChanged(_:))
+        searchField.sendsSearchStringImmediately = true
+        searchField.sendsWholeSearchString = false
+        searchField.controlSize = .regular
+        searchField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        searchField.cell?.usesSingleLineMode = true
+        searchField.cell?.wraps = false
+        searchField.cell?.isScrollable = true
+        return searchField
+    }
+
+    func updateNSView(_ searchField: SafeSearchField, context: Context) {
+        context.coordinator.parent = self
+        guard !searchField.hasMarkedText,
+              searchField.stringValue != text else {
+            return
+        }
+
+        searchField.stringValue = text
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var parent: ToolbarSearchField
+
+        init(_ parent: ToolbarSearchField) {
+            self.parent = parent
+        }
+
+        @MainActor
+        @objc func searchFieldChanged(_ sender: NSSearchField) {
+            parent.text = sender.stringValue
+        }
+
+        @MainActor
+        func controlTextDidChange(_ notification: Notification) {
+            guard let searchField = notification.object as? NSSearchField else {
+                return
+            }
+
+            parent.text = searchField.stringValue
+        }
+    }
+
+    final class SafeSearchField: NSSearchField {
+        var hasMarkedText: Bool {
+            (currentEditor() as? NSTextView)?.hasMarkedText() ?? false
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else {
+                super.mouseDown(with: event)
+                return
+            }
+
+            if clearButtonContains(event) {
+                clearSearchText()
+                return
+            }
+
+            window.makeFirstResponder(self)
+            moveInsertionPointToEnd(retries: 1)
+        }
+
+        private func clearButtonContains(_ event: NSEvent) -> Bool {
+            guard let cell = cell as? NSSearchFieldCell,
+                  !stringValue.isEmpty else {
+                return false
+            }
+
+            let point = convert(event.locationInWindow, from: nil)
+            return cell.cancelButtonRect(forBounds: bounds).contains(point)
+        }
+
+        private func clearSearchText() {
+            stringValue = ""
+            if let action {
+                NSApp.sendAction(action, to: target, from: self)
+            }
+        }
+
+        private func moveInsertionPointToEnd(retries: Int = 0) {
+            guard let editor = currentEditor() as? NSTextView else {
+                guard retries > 0 else {
+                    return
+                }
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.moveInsertionPointToEnd(retries: retries - 1)
+                }
+                return
+            }
+
+            let length = (stringValue as NSString).length
+            editor.setSelectedRange(NSRange(location: length, length: 0))
         }
     }
 }

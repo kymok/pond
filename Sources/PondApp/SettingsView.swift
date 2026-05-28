@@ -68,7 +68,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Default Prompt") {
+                Section("App Default Prompt") {
                     VStack(alignment: .leading, spacing: 8) {
                         PromptTemplateEditor(
                             text: $defaultPromptTemplate,

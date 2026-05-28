@@ -24,6 +24,7 @@ enum TaskFocusDirection {
 
 enum TaskFocusSelectionBehavior {
     case moveInsertionPointToEnd
+    case nearestInsertionPoint(toWindowPoint: NSPoint)
     case selectAll
     case range(NSRange)
 
@@ -42,12 +43,20 @@ enum TaskFocusSelectionBehavior {
         case .moveInsertionPointToEnd:
             let length = (textView.string as NSString).length
             textView.setSelectedRange(NSRange(location: length, length: 0))
+        case .nearestInsertionPoint(let windowPoint):
+            let location = textView.nearestInsertionIndex(toWindowPoint: windowPoint)
+            textView.setSelectedRange(NSRange(location: location, length: 0).clamped(to: textView.string))
         case .selectAll:
             textView.selectAll(nil)
         case .range(let range):
             textView.setSelectedRange(range.clamped(to: textView.string))
         }
     }
+}
+
+struct TaskFocusSelectionRequest {
+    let id = UUID()
+    let behavior: TaskFocusSelectionBehavior
 }
 
 extension NSRange {
@@ -59,11 +68,87 @@ extension NSRange {
     }
 }
 
+private extension NSTextView {
+    func nearestInsertionIndex(toWindowPoint windowPoint: NSPoint) -> Int {
+        guard let layoutManager, let textContainer else {
+            return characterIndexForInsertion(at: convert(windowPoint, from: nil))
+        }
+
+        layoutManager.ensureLayout(for: textContainer)
+
+        var point = convert(windowPoint, from: nil)
+        if let nearestLine = nearestLineFragmentRect(to: point, layoutManager: layoutManager, textContainer: textContainer) {
+            point.y = nearestLine.midY
+        }
+
+        return characterIndexForInsertion(at: point)
+    }
+
+    func nearestLineFragmentRect(
+        to point: NSPoint,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> NSRect? {
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        guard glyphRange.length > 0 else {
+            return nil
+        }
+
+        let origin = textContainerOrigin
+        var nearestRect: NSRect?
+        var nearestDistance = CGFloat.greatestFiniteMagnitude
+        var glyphIndex = glyphRange.location
+
+        while glyphIndex < NSMaxRange(glyphRange) {
+            var lineRange = NSRange()
+            let rect = layoutManager
+                .lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: &lineRange)
+                .offsetBy(dx: origin.x, dy: origin.y)
+            let distance = verticalDistance(from: point.y, to: rect)
+
+            if distance < nearestDistance {
+                nearestDistance = distance
+                nearestRect = rect
+            }
+
+            let nextGlyphIndex = NSMaxRange(lineRange)
+            guard nextGlyphIndex > glyphIndex else {
+                break
+            }
+
+            glyphIndex = nextGlyphIndex
+        }
+
+        return nearestRect
+    }
+
+    func verticalDistance(from y: CGFloat, to rect: NSRect) -> CGFloat {
+        if y < rect.minY {
+            return rect.minY - y
+        }
+
+        if y > rect.maxY {
+            return y - rect.maxY
+        }
+
+        return 0
+    }
+}
+
 enum KeyCode {
     static let backspace: UInt16 = 51
+    static let d: UInt16 = 2
+    static let end: UInt16 = 119
     static let escape: UInt16 = 53
+    static let n: UInt16 = 45
+    static let r: UInt16 = 15
+    static let tab: UInt16 = 48
     static let returnKey: UInt16 = 36
     static let keypadEnter: UInt16 = 76
+    static let pageUp: UInt16 = 116
+    static let pageDown: UInt16 = 121
+    static let arrowLeft: UInt16 = 123
+    static let arrowRight: UInt16 = 124
     static let arrowDown: UInt16 = 125
     static let arrowUp: UInt16 = 126
 }
@@ -299,6 +384,23 @@ extension NSEvent {
         return modifierFlags.intersection(modifiers).isEmpty
     }
 
+    var isCommandOnlyKey: Bool {
+        let exclusiveModifiers: ModifierFlags = [.option, .control, .shift]
+        return modifierFlags.contains(.command)
+            && modifierFlags.intersection(exclusiveModifiers).isEmpty
+    }
+
+    var isCommandOptionOnlyKey: Bool {
+        let exclusiveModifiers: ModifierFlags = [.control, .shift]
+        return modifierFlags.contains(.command)
+            && modifierFlags.contains(.option)
+            && modifierFlags.intersection(exclusiveModifiers).isEmpty
+    }
+
+    var isPlainReturnKey: Bool {
+        isPlainKey && (keyCode == KeyCode.returnKey || keyCode == KeyCode.keypadEnter)
+    }
+
     var isModifiedBackspace: Bool {
         let modifiers: ModifierFlags = [.command, .option, .control]
         return !modifierFlags.intersection(modifiers).isEmpty
@@ -330,12 +432,17 @@ func clearCurrentTextFieldSelection() {
         return
     }
 
-    let selectedRange = fieldEditor.selectedRange()
+    clearTextFieldSelection(fieldEditor)
+}
+
+@MainActor
+func clearTextFieldSelection(_ textView: NSTextView) {
+    let selectedRange = textView.selectedRange()
     guard selectedRange.length > 0 else {
         return
     }
 
-    fieldEditor.setSelectedRange(NSRange(location: selectedRange.location + selectedRange.length, length: 0))
+    textView.setSelectedRange(NSRange(location: selectedRange.location + selectedRange.length, length: 0))
 }
 
 func taskExamplePrompt(template: String, cliCommand: String, collectionName: String) -> String {

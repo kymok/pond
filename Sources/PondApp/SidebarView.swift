@@ -4,17 +4,18 @@ import TaskCore
 
 struct SidebarView: View {
     @EnvironmentObject private var model: TaskAppModel
+    @Environment(\.openSettings) private var openSettings
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @FocusState private var focusedCollection: String?
     @State private var editingCollection: String?
     @State private var editingName = ""
     @State private var newCollectionBeingEdited: String?
-    @State private var showingSettings = false
+    @State private var isHoveringCollections = false
 
     var body: some View {
         VStack(spacing: 0) {
             List(selection: selectedCollection) {
-                Section("Collections") {
+                Section {
                     Label("All", systemImage: "tray.full")
                         .badge(model.totalIncompleteCount)
                         .tag(TaskAppModel.allCollectionID)
@@ -29,46 +30,84 @@ struct SidebarView: View {
                         collectionRow(collection)
                             .tag(collection.name)
                     }
-
-                    Button {
-                        createCollection()
-                    } label: {
-                        Label("Create New", systemImage: "plus")
-                    }
-                    .buttonStyle(.plain)
+                } header: {
+                    collectionSectionHeader("Collections", showsCreateButton: true)
                 }
 
                 if model.showsArchivedCollections && !model.archivedCollectionSummaries.isEmpty {
-                    Section("Archived") {
+                    Section {
                         ForEach(model.archivedCollectionSummaries) { collection in
                             collectionRow(collection)
                                 .tag(collection.name)
                         }
+                    } header: {
+                        collectionSectionHeader("Archived")
                     }
                 }
             }
 
-            Menu {
-                Toggle("Show Incomplete Only", isOn: showIncompleteOnlySelection)
-                Toggle("Show Archived Collections", isOn: $model.showsArchivedCollections)
-                Toggle("Auto Draft", isOn: $model.usesAutoDraft)
-                Toggle("Always On Top", isOn: $alwaysOnTop)
+            HStack(spacing: 8) {
+                Menu {
+                    Toggle("Show Incomplete Only", isOn: showIncompleteOnlySelection)
+                    Toggle("Show Archived Collections", isOn: $model.showsArchivedCollections)
+                    Toggle("Auto Draft", isOn: $model.usesAutoDraft)
+                    Toggle("Always On Top", isOn: $alwaysOnTop)
 
-                Divider()
+                    Divider()
 
-                Button("Settings...") {
-                    showingSettings = true
+                    Button("Settings...") {
+                        openSettings()
+                    }
+                } label: {
+                    footerIcon(systemName: "ellipsis", label: "Settings")
                 }
-            } label: {
-                Label("Settings", systemImage: "gearshape")
+                .buttonStyle(.plain)
+                .help("Settings")
+
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
+    }
+
+    private func footerIcon(systemName: String, label: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 14, weight: .medium))
+            .frame(width: 32, height: 28)
+            .contentShape(Rectangle())
+            .accessibilityLabel(label)
+    }
+
+    private func collectionSectionHeader(_ title: String, showsCreateButton: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 0)
+
+            if showsCreateButton {
+                Button {
+                    createCollection()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .imageScale(.medium)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Create Collection")
+                }
+                .buttonStyle(.plain)
+                .help("Create Collection")
+                .opacity(isHoveringCollections ? 1 : 0)
+                .disabled(!isHoveringCollections)
+                .accessibilityHidden(!isHoveringCollections)
+            }
+        }
+        .padding(.trailing, 12)
+        .contentShape(Rectangle())
+        .onHover { isHovering in
+            if showsCreateButton {
+                isHoveringCollections = isHovering
+            }
         }
     }
 
@@ -106,7 +145,11 @@ struct SidebarView: View {
                     }
                 )
                 .contextMenu {
-                    CollectionActionMenuItems(collection: collection)
+                    CollectionActionMenuItems(
+                        collection: collection,
+                        showsCLICommand: true,
+                        groupsCollectionActionsAtBottom: true
+                    )
                 }
         }
     }
