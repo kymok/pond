@@ -203,18 +203,21 @@ public struct TodoCollectionSummary: Identifiable, Equatable, Sendable {
     public let incompleteCount: Int
     public let statusIndicator: TodoStatus?
     public let color: TodoCollectionColor
+    public let isArchived: Bool
 
     public init(
         name: String,
         totalCount: Int,
         incompleteCount: Int,
         statusIndicator: TodoStatus? = nil,
-        color: TodoCollectionColor = .gray
+        color: TodoCollectionColor = .gray,
+        isArchived: Bool = false
     ) {
         self.name = name
         self.totalCount = totalCount
         self.incompleteCount = incompleteCount
         self.statusIndicator = statusIndicator
         self.color = color
+        self.isArchived = isArchived
     }
 }

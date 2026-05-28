@@ -137,7 +137,8 @@ public final class TodoStore: @unchecked Sendable {
                         totalCount: items.count,
                         incompleteCount: items.filter(\.status.isIncomplete).count,
                         statusIndicator: collectionStatusIndicator(for: items),
-                        color: collectionColor(name, in: file)
+                        color: collectionColor(name, in: file),
+                        isArchived: file.archivedCollections.contains(name)
                     )
                 }
         }
@@ -170,6 +171,8 @@ public final class TodoStore: @unchecked Sendable {
 
             let newNameHadColor = file.collectionColors[cleanNewName] != nil
             let oldColor = file.collectionColors.removeValue(forKey: cleanOldName)
+            let shouldArchiveNewName = file.archivedCollections.remove(cleanOldName) != nil
+                || file.archivedCollections.contains(cleanNewName)
             let now = Date()
             for index in file.items.indices where file.items[index].collection == cleanOldName {
                 file.items[index].collection = cleanNewName
@@ -180,6 +183,9 @@ public final class TodoStore: @unchecked Sendable {
             addCollectionIfMissing(cleanNewName, to: &file)
             if !newNameHadColor {
                 file.collectionColors[cleanNewName] = oldColor ?? .gray
+            }
+            if shouldArchiveNewName {
+                file.archivedCollections.insert(cleanNewName)
             }
             return cleanNewName
         }
@@ -203,7 +209,36 @@ public final class TodoStore: @unchecked Sendable {
                 totalCount: items.count,
                 incompleteCount: items.filter(\.status.isIncomplete).count,
                 statusIndicator: collectionStatusIndicator(for: items),
-                color: color
+                color: color,
+                isArchived: file.archivedCollections.contains(cleanName)
+            )
+        }
+    }
+
+    @discardableResult
+    public func setCollectionArchived(name: String, isArchived: Bool) throws -> TodoCollectionSummary {
+        let cleanName = try normalizedExplicitCollection(name)
+
+        return try withFile(write: true) { file in
+            guard collectionExists(cleanName, in: file) else {
+                throw TodoStoreError.collectionNotFound(cleanName)
+            }
+
+            addCollectionIfMissing(cleanName, to: &file)
+            if isArchived {
+                file.archivedCollections.insert(cleanName)
+            } else {
+                file.archivedCollections.remove(cleanName)
+            }
+
+            let items = file.items.filter { $0.collection == cleanName }
+            return TodoCollectionSummary(
+                name: cleanName,
+                totalCount: items.count,
+                incompleteCount: items.filter(\.status.isIncomplete).count,
+                statusIndicator: collectionStatusIndicator(for: items),
+                color: collectionColor(cleanName, in: file),
+                isArchived: isArchived
             )
         }
     }
@@ -220,6 +255,7 @@ public final class TodoStore: @unchecked Sendable {
             let originalCount = file.collections.count
             file.collections.removeAll { $0 == cleanName }
             file.collectionColors.removeValue(forKey: cleanName)
+            file.archivedCollections.remove(cleanName)
             return file.collections.count != originalCount
         }
     }
@@ -237,6 +273,7 @@ public final class TodoStore: @unchecked Sendable {
             let originalItemCount = file.items.count
             file.collections.removeAll { $0 == cleanName }
             file.collectionColors.removeValue(forKey: cleanName)
+            file.archivedCollections.remove(cleanName)
             file.items.removeAll { $0.collection == cleanName }
             return file.collections.count != originalCollectionCount
                 || file.items.count != originalItemCount
@@ -762,6 +799,7 @@ private struct TodoFile: Codable {
     var version = 5
     var collections: [String] = []
     var collectionColors: [String: TodoCollectionColor] = [:]
+    var archivedCollections: Set<String> = []
     var items: [TodoItem] = []
     var needsMigration = false
 
@@ -769,6 +807,7 @@ private struct TodoFile: Codable {
         case version
         case collections
         case collectionColors
+        case archivedCollections
         case items
     }
 
@@ -788,6 +827,8 @@ private struct TodoFile: Codable {
             rawColors.compactMapValues { TodoCollectionColor(rawValue: $0) },
             collections: collections
         )
+        let rawArchivedCollections = try container.decodeIfPresent([String].self, forKey: .archivedCollections) ?? []
+        archivedCollections = Set(normalizedCollectionList(rawArchivedCollections).filter { collections.contains($0) })
     }
 
     func encode(to encoder: Encoder) throws {
@@ -798,6 +839,10 @@ private struct TodoFile: Codable {
         try container.encode(
             normalizedCollectionColors(collectionColors, collections: collectionNames),
             forKey: .collectionColors
+        )
+        try container.encode(
+            sortedCollectionNames(archivedCollections.filter { collectionNames.contains($0) }),
+            forKey: .archivedCollections
         )
         try container.encode(items, forKey: .items)
     }

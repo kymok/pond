@@ -25,7 +25,7 @@ struct SidebarView: View {
                             .disabled(model.items.isEmpty)
                         }
 
-                    ForEach(model.collectionSummaries) { collection in
+                    ForEach(model.visibleCollectionSummaries) { collection in
                         collectionRow(collection)
                             .tag(collection.name)
                     }
@@ -37,10 +37,20 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                if model.showsArchivedCollections && !model.archivedCollectionSummaries.isEmpty {
+                    Section("Archived") {
+                        ForEach(model.archivedCollectionSummaries) { collection in
+                            collectionRow(collection)
+                                .tag(collection.name)
+                        }
+                    }
+                }
             }
 
             Menu {
                 Toggle("Show Incomplete Only", isOn: showIncompleteOnlySelection)
+                Toggle("Show Archived Collections", isOn: $model.showsArchivedCollections)
                 Toggle("Auto Draft", isOn: $model.usesAutoDraft)
                 Toggle("Always On Top", isOn: $alwaysOnTop)
 

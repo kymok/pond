@@ -28,7 +28,14 @@ final class TodoAppModel: ObservableObject {
     @Published var collectionSummaries: [TodoCollectionSummary] = []
     @Published var selectedCollection: String
     @Published var searchText = ""
-    @Published var showsIncompleteOnly = true
+    @Published var showsIncompleteOnly = false
+    @Published var showsArchivedCollections = false {
+        didSet {
+            if !showsArchivedCollections, selectedCollectionSummary?.isArchived == true {
+                selectedCollection = Self.allCollectionID
+            }
+        }
+    }
     @Published var usesAutoDraft: Bool {
         didSet {
             UserDefaults.standard.set(usesAutoDraft, forKey: Self.usesAutoDraftKey)
@@ -70,7 +77,15 @@ final class TodoAppModel: ObservableObject {
     }
 
     var collectionNames: [String] {
-        collectionSummaries.map(\.name)
+        visibleCollectionSummaries.map(\.name)
+    }
+
+    var visibleCollectionSummaries: [TodoCollectionSummary] {
+        collectionSummaries.filter { !$0.isArchived }
+    }
+
+    var archivedCollectionSummaries: [TodoCollectionSummary] {
+        collectionSummaries.filter(\.isArchived)
     }
 
     var selectedCollectionSummary: TodoCollectionSummary? {
@@ -90,20 +105,21 @@ final class TodoAppModel: ObservableObject {
     }
 
     var visibleItems: [TodoItem] {
+        items.filter { itemIsVisible($0, keepsRecentlyCompletedVisible: true) }
+    }
+
+    func itemIsVisible(_ item: TodoItem, keepsRecentlyCompletedVisible: Bool = false) -> Bool {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let collectionMatches = selectedCollectionName.map { $0 == item.collection } ?? true
+        let statusMatches = !showsIncompleteOnly
+            || item.status.isIncomplete
+            || (keepsRecentlyCompletedVisible && recentlyCompletedVisibleIDs.contains(item.id))
+        let searchMatches = query.isEmpty
+            || item.title.localizedCaseInsensitiveContains(query)
+            || item.collection.localizedCaseInsensitiveContains(query)
+            || item.id.localizedCaseInsensitiveContains(query)
 
-        return items.filter { item in
-            let collectionMatches = selectedCollectionName.map { $0 == item.collection } ?? true
-            let statusMatches = !showsIncompleteOnly
-                || item.status.isIncomplete
-                || recentlyCompletedVisibleIDs.contains(item.id)
-            let searchMatches = query.isEmpty
-                || item.title.localizedCaseInsensitiveContains(query)
-                || item.collection.localizedCaseInsensitiveContains(query)
-                || item.id.localizedCaseInsensitiveContains(query)
-
-            return collectionMatches && statusMatches && searchMatches
-        }
+        return collectionMatches && statusMatches && searchMatches
     }
 
     var totalIncompleteCount: Int {
@@ -119,6 +135,9 @@ final class TodoAppModel: ObservableObject {
             collectionSummaries = try store.collectionSummaries()
 
             if selectedCollectionName != nil && !collectionSummaries.contains(where: { $0.name == selectedCollection }) {
+                selectedCollection = Self.allCollectionID
+            }
+            if selectedCollectionSummary?.isArchived == true, !showsArchivedCollections {
                 selectedCollection = Self.allCollectionID
             }
         } catch {
@@ -142,6 +161,38 @@ final class TodoAppModel: ObservableObject {
                 allowEmptyTitle: allowEmptyTitle,
                 status: status
             )
+        }
+    }
+
+    func createTodoInBackground(
+        title: String,
+        collection: String? = nil,
+        id: String? = nil,
+        allowEmptyTitle: Bool = false,
+        status: TodoStatus = .draft,
+        completion: @escaping (TodoItem?) -> Void
+    ) {
+        let store = store
+        let collection = collection ?? selectedCollectionName ?? TodoStore.defaultCollection
+
+        Task { @MainActor in
+            do {
+                let item = try await Task.detached {
+                    try store.add(
+                        title: title,
+                        collection: collection,
+                        id: id,
+                        allowEmptyTitle: allowEmptyTitle,
+                        status: status
+                    )
+                }.value
+                reload()
+                completion(item)
+            } catch {
+                errorMessage = error.localizedDescription
+                reload()
+                completion(nil)
+            }
         }
     }
 
@@ -201,6 +252,15 @@ final class TodoAppModel: ObservableObject {
     func setCollectionColor(_ collection: TodoCollectionSummary, color: TodoCollectionColor) {
         updateStore(ignoring: isStaleCollection) {
             try store.setCollectionColor(name: collection.name, color: color)
+        }
+    }
+
+    func setCollectionArchived(_ collection: TodoCollectionSummary, isArchived: Bool) {
+        updateStore(ignoring: isStaleCollection) {
+            try store.setCollectionArchived(name: collection.name, isArchived: isArchived)
+            if isArchived && selectedCollection == collection.name && !showsArchivedCollections {
+                selectedCollection = Self.allCollectionID
+            }
         }
     }
 
@@ -664,6 +724,12 @@ struct CollectionActionMenuItems: View {
         Divider()
 
         CollectionColorMenu(collection: collection)
+
+        Divider()
+
+        Button(collection.isArchived ? "Unarchive Collection" : "Archive Collection") {
+            model.setCollectionArchived(collection, isArchived: !collection.isArchived)
+        }
 
         Divider()
 

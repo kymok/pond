@@ -320,6 +320,39 @@ final class TodoStoreTests: XCTestCase {
         )
     }
 
+    func testCollectionArchiveStatusIsPersisted() throws {
+        let store = makeStore()
+        try store.createCollection(name: "Inbox")
+
+        let archived = try store.setCollectionArchived(name: "Inbox", isArchived: true)
+
+        XCTAssertTrue(archived.isArchived)
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [TodoCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0, isArchived: true)]
+        )
+
+        let reloadedStore = TodoStore(fileURL: store.fileURL)
+        XCTAssertEqual(try reloadedStore.collectionSummaries().map(\.isArchived), [true])
+
+        let unarchived = try reloadedStore.setCollectionArchived(name: "Inbox", isArchived: false)
+        XCTAssertFalse(unarchived.isArchived)
+        XCTAssertEqual(try reloadedStore.collectionSummaries().map(\.isArchived), [false])
+    }
+
+    func testRenameCollectionCarriesArchiveStatus() throws {
+        let store = makeStore()
+        try store.createCollection(name: "Inbox")
+        try store.setCollectionArchived(name: "Inbox", isArchived: true)
+
+        try store.renameCollection(from: "Inbox", to: "Personal")
+
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [TodoCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, isArchived: true)]
+        )
+    }
+
     func testLegacyStoreBuildsCollectionsFromItems() throws {
         let store = makeStore()
         let date = Date(timeIntervalSince1970: 0)

@@ -11,6 +11,8 @@ struct DetailView: View {
     @State private var pendingTitleFocusSelection: [String: TodoFocusSelectionBehavior] = [:]
     @State private var draftItem: TodoItem?
     @State private var draftPreviousItemID: String?
+    @State private var committedDraftItems: [TodoItem] = []
+    @State private var committedDraftPreviousItemIDs: [String: String?] = [:]
     @State private var pendingScrollItemID: String?
     @State private var draggedItemID: String?
     @State private var didReorderDraggedItem = false
@@ -18,12 +20,19 @@ struct DetailView: View {
     private var visibleStoredItems: [TodoItem] {
         let baseItems = model.visibleItems
         let pinnedIDs = Set([focusedField?.itemID, pendingDraftFocusID].compactMap { $0 })
+        let visibleCommittedDrafts = committedDraftItems.filter { item in
+            !hasStoredItem(id: item.id) && model.itemIsVisible(item)
+        }
+        let visibleItems = baseItems.insertingCommittedDrafts(
+            visibleCommittedDrafts,
+            previousItemIDs: committedDraftPreviousItemIDs
+        )
 
         if pinnedIDs.isEmpty {
-            return baseItems
+            return visibleItems
         }
 
-        let baseIDs = Set(baseItems.map(\.id))
+        let baseIDs = Set(visibleItems.map(\.id))
         return model.items.filter { item in
             if baseIDs.contains(item.id) {
                 return true
@@ -39,6 +48,7 @@ struct DetailView: View {
 
             return model.selectedCollectionName.map { $0 == item.collection } ?? true
         }
+        .insertingCommittedDrafts(visibleCommittedDrafts, previousItemIDs: committedDraftPreviousItemIDs)
     }
 
     private var visibleItems: [TodoItem] {
@@ -199,7 +209,7 @@ struct DetailView: View {
         }
     }
 
-    private func materializeDraft(after previousItemID: String? = nil) {
+    private func materializeDraft(after previousItemID: String? = nil, collection: String? = nil) {
         if let pendingDraftItem {
             focusTextField(.title(pendingDraftItem.id))
             return
@@ -219,7 +229,7 @@ struct DetailView: View {
         draftItem = TodoItem(
             id: itemID,
             title: "",
-            collection: collectionForNewDraft(after: previousItemID)
+            collection: collection ?? collectionForNewDraft(after: previousItemID)
         )
     }
 
@@ -425,17 +435,66 @@ struct DetailView: View {
 
     private func insertDraftBelow(_ item: TodoItem, title: String) {
         if isPendingDraft(item) {
-            saveDraft(
+            commitPendingDraftAndMaterializeNext(
                 item,
                 title: title,
-                newFocus: nil,
                 status: model.autoDraftConfirmationStatus ?? .draft
             )
         } else {
             model.renameOrDeleteIfEmpty(item, title: title, statusAfterEdit: model.autoDraftConfirmationStatus)
+            materializeDraft(after: item.id)
+        }
+    }
+
+    private func commitPendingDraftAndMaterializeNext(
+        _ item: TodoItem,
+        title: String,
+        status: TodoStatus
+    ) {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else {
+            _ = deleteEmptyAndMoveFocusDown(item)
+            return
         }
 
-        materializeDraft(after: item.id)
+        let collection = draftItem?.collection ?? item.collection
+        let previousItemID = draftPreviousItemID
+        let committedItemID = uniqueDraftCommitID(excluding: item.id)
+        let committedItem = TodoItem(
+            id: committedItemID,
+            title: title,
+            collection: collection,
+            status: status,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt
+        )
+
+        committedDraftItems.append(committedItem)
+        committedDraftPreviousItemIDs[committedItemID] = previousItemID
+        draftPreviousItemID = committedItemID
+        draftItem = TodoItem(id: item.id, title: "", collection: collection)
+
+        model.createTodoInBackground(
+            title: title,
+            collection: collection,
+            id: committedItemID,
+            status: status
+        ) { createdItem in
+            if createdItem != nil, let previousItemID {
+                model.reorderItem(id: committedItemID, after: previousItemID, before: nil)
+            }
+
+            committedDraftItems.removeAll { $0.id == committedItemID }
+            committedDraftPreviousItemIDs[committedItemID] = nil
+        }
+    }
+
+    private func uniqueDraftCommitID(excluding draftID: String) -> String {
+        var id = model.makeTodoID()
+        while id == draftID || committedDraftItems.contains(where: { $0.id == id }) {
+            id = model.makeTodoID()
+        }
+        return id
     }
 
     private func hasVisibleItemAfter(_ item: TodoItem) -> Bool {
@@ -574,6 +633,19 @@ private extension Array where Element == TodoItem {
         var items = self
         items.insert(draftItem, at: previousIndex + 1)
         return items
+    }
+
+    func insertingCommittedDrafts(
+        _ drafts: [TodoItem],
+        previousItemIDs: [String: String?]
+    ) -> [TodoItem] {
+        drafts.reduce(self) { items, draft in
+            guard !items.contains(where: { $0.id == draft.id }) else {
+                return items
+            }
+
+            return items.insertingDraft(draft, after: previousItemIDs[draft.id] ?? nil)
+        }
     }
 }
 

@@ -616,7 +616,18 @@ struct TodoRow: View {
         cancelAutosave()
         skipsNextFocusLossSave = true
         insertDraftBelow(item, currentTitle)
+        if isPendingDraft {
+            resetTitleEditorForNextDraft(textView)
+        }
         return true
+    }
+
+    private func resetTitleEditorForNextDraft(_ textView: NSTextView) {
+        title = ""
+        updateActiveTitleEdit(item.id, "")
+        textView.string = ""
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.invalidateIntrinsicContentSize()
     }
 
     private func moveFocusDownFromTitle(

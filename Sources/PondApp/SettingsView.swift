@@ -10,8 +10,14 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             Form {
                 Section("View") {
-                    LabeledContent("Build ID") {
-                        Text(buildID)
+                    LabeledContent("Version") {
+                        Text(appVersion)
+                            .monospacedDigit()
+                            .textSelection(.enabled)
+                    }
+
+                    LabeledContent("Build") {
+                        Text(buildNumber)
                             .monospacedDigit()
                             .textSelection(.enabled)
                     }
@@ -31,9 +37,19 @@ struct SettingsView: View {
 
                         if !status.installDirectoryIsInPath {
                             LabeledContent("Add to PATH") {
-                                Text(model.pathHint)
-                                    .monospaced()
-                                    .textSelection(.enabled)
+                                HStack(spacing: 8) {
+                                    Text(model.pathHint)
+                                        .monospaced()
+                                        .textSelection(.enabled)
+
+                                    Button {
+                                        copyToPasteboard(model.pathHint)
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Copy PATH command")
+                                }
                             }
                         }
 
@@ -71,7 +87,11 @@ struct SettingsView: View {
         }
     }
 
-    private var buildID: String {
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unavailable"
+    }
+
+    private var buildNumber: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unavailable"
     }
 
