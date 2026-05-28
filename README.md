@@ -24,46 +24,6 @@ To create a bundle with explicit release metadata:
 ./Scripts/package-app.sh --version 0.1.0 --build 0.1.0.123
 ```
 
-## Run the GUI
-
-```sh
-swift run Pond
-```
-
-The app stores data at:
-
-```text
-~/Library/Application Support/Pond/todos.json
-```
-
-Set `POND_STORE=/path/to/todos.json` to use a different store, which is useful for tests or local experiments.
-
-## Release
-
-Releases are distributed from GitHub as a notarized ZIP. The release script requires a local Developer ID Application certificate, a stored notarytool Keychain profile, and an authenticated `gh` CLI session.
-
-One-time notarization credential setup:
-
-```sh
-xcrun notarytool store-credentials PondNotary --apple-id <apple-id> --team-id <team-id>
-```
-
-Create and push a `vX.Y.Z` tag on the exact commit to release, then run:
-
-```sh
-export DEVELOPER_ID_APPLICATION="Developer ID Application: <name> (<team-id>)"
-./Scripts/release.sh
-```
-
-`Scripts/release.sh` derives:
-
-```text
-CFBundleShortVersionString = X.Y.Z
-CFBundleVersion = X.Y.Z.W
-```
-
-`W` is `git rev-list --count HEAD`. The script signs `dist/Pond.app`, submits it to Apple notarization, staples the ticket, validates Gatekeeper assessment, creates `Pond-vX.Y.Z-macOS.zip`, writes a SHA-256 checksum, and creates the GitHub Release with both files attached.
-
 ## CLI
 
 ```sh

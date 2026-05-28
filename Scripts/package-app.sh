@@ -108,38 +108,42 @@ render_icon_file_to_png() {
   local source_icon="$1"
   local output_png="$2"
   local icon_tool
-  local fallback_png
 
   if icon_tool="$(find_icon_tool)" && "$icon_tool" "$source_icon" --export-image --output-file "$output_png" --platform macOS --rendition Default --width 1024 --height 1024 --scale 1 >/dev/null; then
     return 0
   fi
 
-  # Some Icon Composer bundles do not open in ictool, but still include usable source PNG assets.
-  if [[ -d "$source_icon/Assets" ]]; then
-    fallback_png="$(find "$source_icon/Assets" -maxdepth 1 -type f -name '*.png' ! -name '*dark*' -print -quit)"
-    if [[ -z "$fallback_png" ]]; then
-      fallback_png="$(find "$source_icon/Assets" -maxdepth 1 -type f -name '*.png' -print -quit)"
-    fi
-  fi
-  if [[ -z "$fallback_png" ]]; then
-    echo "No PNG assets found in $source_icon" >&2
-    return 1
-  fi
+  echo "Failed to render $source_icon with Icon Composer. Install a compatible Xcode or provide $PACKAGING_RESOURCES_DIR/$ICON_NAME.icns." >&2
+  return 1
+}
 
-  cp "$fallback_png" "$output_png"
+copy_icon_file() {
+  local source_icon="$1"
+  local output_icon="$2"
+
+  rm -rf "$output_icon"
+  ditto "$source_icon" "$output_icon"
 }
 
 install_app_icon() {
   local output_icns="$RESOURCES_DIR/$ICON_NAME.icns"
+  local output_icon="$RESOURCES_DIR/$ICON_NAME.icon"
   local source_icns="$PACKAGING_RESOURCES_DIR/$ICON_NAME.icns"
   local source_icon="$PACKAGING_RESOURCES_DIR/$ICON_NAME.icon"
   local source_iconset="$PACKAGING_RESOURCES_DIR/$ICON_NAME.iconset"
   local source_png="$PACKAGING_RESOURCES_DIR/$ICON_NAME.png"
 
-  if [[ -f "$source_icns" ]]; then
+  if [[ -d "$source_icon" ]]; then
+    copy_icon_file "$source_icon" "$output_icon"
+    if ! create_icns_from_icon_file "$source_icon" "$output_icns"; then
+      if [[ -f "$source_icns" ]]; then
+        cp "$source_icns" "$output_icns"
+      else
+        return 1
+      fi
+    fi
+  elif [[ -f "$source_icns" ]]; then
     cp "$source_icns" "$output_icns"
-  elif [[ -d "$source_icon" ]]; then
-    create_icns_from_icon_file "$source_icon" "$output_icns"
   elif [[ -d "$source_iconset" ]]; then
     iconutil -c icns "$source_iconset" -o "$output_icns"
   elif [[ -f "$source_png" ]]; then
