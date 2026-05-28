@@ -3,16 +3,16 @@ import SwiftUI
 @main
 struct PondApp: App {
     @StateObject private var selectedCollectionPersistence = SelectedCollectionPersistence()
-    @StateObject private var settingsModel = TodoAppModel()
+    @StateObject private var settingsModel = TaskAppModel()
 
     var body: some Scene {
         WindowGroup {
-            TodoWindowRoot(initialSelectedCollection: selectedCollectionPersistence.initialSelectedCollection)
+            TaskWindowRoot(initialSelectedCollection: selectedCollectionPersistence.initialSelectedCollection)
                 .environmentObject(selectedCollectionPersistence)
         }
         .defaultSize(width: 640, height: 360)
         .commands {
-            TodoCommands()
+            TaskCommands()
         }
 
         Settings {
@@ -22,12 +22,12 @@ struct PondApp: App {
     }
 }
 
-private struct TodoWindowRoot: View {
+private struct TaskWindowRoot: View {
     @EnvironmentObject private var selectedCollectionPersistence: SelectedCollectionPersistence
-    @StateObject private var model: TodoAppModel
+    @StateObject private var model: TaskAppModel
 
     init(initialSelectedCollection: String) {
-        _model = StateObject(wrappedValue: TodoAppModel(initialSelectedCollection: initialSelectedCollection))
+        _model = StateObject(wrappedValue: TaskAppModel(initialSelectedCollection: initialSelectedCollection))
     }
 
     var body: some View {
@@ -38,8 +38,8 @@ private struct TodoWindowRoot: View {
     }
 }
 
-private struct TodoCommands: Commands {
-    @FocusedObject private var model: TodoAppModel?
+private struct TaskCommands: Commands {
+    @FocusedObject private var model: TaskAppModel?
 
     var body: some Commands {
         CommandGroup(after: .pasteboard) {

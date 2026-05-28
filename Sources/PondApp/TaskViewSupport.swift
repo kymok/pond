@@ -1,27 +1,28 @@
 import AppKit
 import SwiftUI
-import TodoCore
+import TaskCore
 
-enum TodoFocusField: Hashable {
+enum TaskFocusField: Hashable {
     case title(String)
     case collection(String)
+    case note(String)
 }
 
-extension TodoFocusField {
+extension TaskFocusField {
     var itemID: String? {
         switch self {
-        case .title(let id), .collection(let id):
+        case .title(let id), .collection(let id), .note(let id):
             id
         }
     }
 }
 
-enum TodoFocusDirection {
+enum TaskFocusDirection {
     case up
     case down
 }
 
-enum TodoFocusSelectionBehavior {
+enum TaskFocusSelectionBehavior {
     case moveInsertionPointToEnd
     case selectAll
     case range(NSRange)
@@ -72,7 +73,7 @@ enum SidebarLayout {
     static let maximumWidth: CGFloat = minimumWidth * 3
 }
 
-enum TodoRowLayout {
+enum TaskRowLayout {
     static let collectionControlWidth: CGFloat = 80
     static let collectionControlHorizontalPadding: CGFloat = 8
     static let collectionControlContentWidth = collectionControlWidth - (collectionControlHorizontalPadding * 2)
@@ -94,9 +95,21 @@ enum TodoRowLayout {
     static var titleFirstLineCenterY: CGFloat {
         titleLineHeight / 2
     }
+
+    static var noteFont: NSFont {
+        NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+    }
+
+    static var noteLineHeight: CGFloat {
+        noteFont.pointSize * 1.25
+    }
+
+    static var noteLineSpacing: CGFloat {
+        max(0, noteLineHeight - NSLayoutManager().defaultLineHeight(for: noteFont))
+    }
 }
 
-extension TodoCollectionColor {
+extension TaskCollectionColor {
     var swiftUIColor: Color {
         Color(nsColor: swatchNSColor)
     }
@@ -152,7 +165,7 @@ extension String {
 }
 
 struct CollectionColorSwatch: View {
-    let color: TodoCollectionColor
+    let color: TaskCollectionColor
     var size: CGFloat = 10
 
     var body: some View {
@@ -164,7 +177,7 @@ struct CollectionColorSwatch: View {
     }
 }
 
-extension TodoStatus {
+extension TaskStatus {
     var systemImage: String {
         switch self {
         case .ready:
@@ -179,24 +192,52 @@ extension TodoStatus {
             "smallcircle.filled.circle.fill"
         case .aborted:
             "exclamationmark.circle.fill"
+        case .rejected:
+            "xmark.circle.fill"
         }
     }
 
     var iconColor: Color {
+        Color(nsColor: iconNSColor)
+    }
+
+    var iconNSColor: NSColor {
         switch self {
         case .ready:
-            .secondary
+            .secondaryLabelColor
         case .draft:
-            .secondary
+            .secondaryLabelColor
         case .inProgress:
-            .blue.opacity(0.7)
+            .systemBlue.withAlphaComponent(0.7)
         case .completed:
-            .green.opacity(0.7)
+            .systemGreen.withAlphaComponent(0.7)
         case .onHold:
-            .orange
+            .systemOrange
         case .aborted:
-            .red
+            .systemRed
+        case .rejected:
+            .systemRed.withAlphaComponent(0.75)
         }
+    }
+
+    var menuImage: NSImage {
+        let configuration = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
+        guard let symbol = NSImage(
+            systemSymbolName: systemImage,
+            accessibilityDescription: displayName
+        )?.withSymbolConfiguration(configuration) else {
+            return NSImage(size: NSSize(width: 16, height: 16))
+        }
+
+        let image = NSImage(size: symbol.size)
+        image.lockFocus()
+        let rect = NSRect(origin: .zero, size: symbol.size)
+        symbol.draw(in: rect)
+        iconNSColor.setFill()
+        rect.fill(using: .sourceAtop)
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 
     var symbolRenderingMode: SymbolRenderingMode {
@@ -207,7 +248,7 @@ extension TodoStatus {
         self == .inProgress || self == .completed
     }
 
-    var leadingStatusClickTarget: TodoStatus {
+    var leadingStatusClickTarget: TaskStatus {
         switch self {
         case .ready:
             .completed
@@ -219,8 +260,8 @@ extension TodoStatus {
     }
 }
 
-struct TodoStatusIcon: View {
-    let status: TodoStatus
+struct TaskStatusIcon: View {
+    let status: TaskStatus
     var font: Font = .body
 
     var body: some View {
@@ -231,19 +272,19 @@ struct TodoStatusIcon: View {
     }
 }
 
-struct TodoStatusLabel: View {
-    let status: TodoStatus
+struct TaskStatusLabel: View {
+    let status: TaskStatus
 
     var body: some View {
         Label {
             Text(status.displayName)
         } icon: {
-            TodoStatusIcon(status: status)
+            TaskStatusIcon(status: status)
         }
     }
 }
 
-struct ActiveTodoTitleEdit {
+struct ActiveTaskTitleEdit {
     var id: String
     var title: String
 
@@ -297,8 +338,13 @@ func clearCurrentTextFieldSelection() {
     fieldEditor.setSelectedRange(NSRange(location: selectedRange.location + selectedRange.length, length: 0))
 }
 
-func todoExamplePrompt(cliCommand: String) -> String {
-    "Run `\(cliCommand)` and complete the listed tasks. Use `taskpond item update [task id] --status [status]` to update task status. Skip `Draft` tasks. Mark unclear, unnatural, or clearly unrelated tasks as `on-hold`. Mark tasks as `in-progress` when started and `aborted` if they cannot be completed. Group related work into appropriate commits. Use sub-agents with separate worktrees when parallelization helps, then merge their branches into the current branch. Before finishing, run `\(cliCommand)` again because the user may add more tasks, and ensure no uncommitted changes remain."
+func taskExamplePrompt(template: String, cliCommand: String, collectionName: String) -> String {
+    TaskPromptTemplate(template).evaluated(
+        variables: [
+            "cliCommand": cliCommand,
+            "collectionName": collectionName
+        ]
+    )
 }
 
 @MainActor

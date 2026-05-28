@@ -1,23 +1,23 @@
 import AppKit
 import SwiftUI
-import TodoCore
+import TaskCore
 import UniformTypeIdentifiers
 
 struct DetailView: View {
-    @EnvironmentObject private var model: TodoAppModel
-    @State private var focusedField: TodoFocusField?
+    @EnvironmentObject private var model: TaskAppModel
+    @State private var focusedField: TaskFocusField?
     @State private var pendingDraftFocusID: String?
-    @State private var activeTitleEdit: ActiveTodoTitleEdit?
-    @State private var pendingTitleFocusSelection: [String: TodoFocusSelectionBehavior] = [:]
-    @State private var draftItem: TodoItem?
+    @State private var activeTitleEdit: ActiveTaskTitleEdit?
+    @State private var pendingTitleFocusSelection: [String: TaskFocusSelectionBehavior] = [:]
+    @State private var draftItem: TaskItem?
     @State private var draftPreviousItemID: String?
-    @State private var committedDraftItems: [TodoItem] = []
+    @State private var committedDraftItems: [TaskItem] = []
     @State private var committedDraftPreviousItemIDs: [String: String?] = [:]
     @State private var pendingScrollItemID: String?
     @State private var draggedItemID: String?
     @State private var didReorderDraggedItem = false
 
-    private var visibleStoredItems: [TodoItem] {
+    private var visibleStoredItems: [TaskItem] {
         let baseItems = model.visibleItems
         let pinnedIDs = Set([focusedField?.itemID, pendingDraftFocusID].compactMap { $0 })
         let visibleCommittedDrafts = committedDraftItems.filter { item in
@@ -51,7 +51,7 @@ struct DetailView: View {
         .insertingCommittedDrafts(visibleCommittedDrafts, previousItemIDs: committedDraftPreviousItemIDs)
     }
 
-    private var visibleItems: [TodoItem] {
+    private var visibleItems: [TaskItem] {
         if let pendingDraftItem {
             return visibleStoredItems.insertingDraft(pendingDraftItem, after: draftPreviousItemID)
         }
@@ -66,14 +66,14 @@ struct DetailView: View {
                     LazyVStack(spacing: 0) {
                         let items = visibleItems
                         ForEach(items) { item in
-                            todoRow(item, storedItems: visibleStoredItems)
+                            taskRow(item, storedItems: visibleStoredItems)
                         }
                         .animation(.easeInOut(duration: 0.18), value: items.map(\.id))
 
                         if pendingDraftItem == nil {
-                            DraftTodoRow(
+                            DraftTaskRow(
                                 materializeDraft: { materializeDraft() },
-                                createTodoFromDroppedFile: createTodoFromDroppedFile
+                                createTaskFromDroppedFile: createTaskFromDroppedFile
                             )
                             .id("draft")
                         }
@@ -81,21 +81,21 @@ struct DetailView: View {
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
                     .onDrop(
-                        of: TodoItemDrag.acceptedTypes,
-                        delegate: TodoListDropDelegate(
+                        of: TaskItemDrag.acceptedTypes,
+                        delegate: TaskListDropDelegate(
                             finishDragging: finishDragging
                         )
                     )
                     .background {
                         Color.clear
                             .contentShape(Rectangle())
-                            .onTapGesture(perform: focusLatestTodoField)
+                            .onTapGesture(perform: focusLatestTaskField)
                     }
                 }
                 .background {
                     Color(nsColor: .textBackgroundColor)
                         .contentShape(Rectangle())
-                        .onTapGesture(perform: defocusTodoField)
+                        .onTapGesture(perform: defocusTaskField)
                 }
                 .onChange(of: pendingScrollItemID) { _, itemID in
                     scrollToPendingItem(itemID, with: scrollProxy)
@@ -110,10 +110,10 @@ struct DetailView: View {
     }
 
     @ViewBuilder
-    private func todoRow(_ item: TodoItem, storedItems: [TodoItem]) -> some View {
+    private func taskRow(_ item: TaskItem, storedItems: [TaskItem]) -> some View {
         let itemIsPendingDraft = isPendingDraft(item)
 
-        let row = TodoRow(
+        let row = TaskRow(
             item: item,
             isPendingDraft: itemIsPendingDraft,
             focusedField: $focusedField,
@@ -129,7 +129,7 @@ struct DetailView: View {
             deleteAndFocusPrevious: deleteAndFocusPrevious,
             deleteEmptyAndMoveFocusDown: deleteEmptyAndMoveFocusDown
         )
-        .id(TodoRowRenderIdentity(itemID: item.id, isPendingDraft: itemIsPendingDraft))
+        .id(TaskRowRenderIdentity(itemID: item.id, isPendingDraft: itemIsPendingDraft))
         .id(item.id)
         .transition(
             .asymmetric(
@@ -149,13 +149,13 @@ struct DetailView: View {
             row
                 .onDrag {
                     beginDragging(item)
-                    return TodoItemDrag.itemProvider(id: item.id)
+                    return TaskItemDrag.itemProvider(id: item.id)
                 } preview: {
                     Color.clear.frame(width: 1, height: 1)
                 }
                 .onDrop(
-                    of: TodoItemDrag.acceptedTypes,
-                    delegate: TodoRowDropDelegate(
+                    of: TaskItemDrag.acceptedTypes,
+                    delegate: TaskRowDropDelegate(
                         item: item,
                         visibleItems: storedItems,
                         draggedItemID: $draggedItemID,
@@ -167,7 +167,7 @@ struct DetailView: View {
         }
     }
 
-    private func beginDragging(_ item: TodoItem) {
+    private func beginDragging(_ item: TaskItem) {
         settlePendingDraftBeforeDragging(item)
         draggedItemID = item.id
         didReorderDraggedItem = false
@@ -197,8 +197,8 @@ struct DetailView: View {
     }
 
     private func focusTextField(
-        _ field: TodoFocusField,
-        selectionBehavior: TodoFocusSelectionBehavior = .moveInsertionPointToEnd
+        _ field: TaskFocusField,
+        selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd
     ) {
         focusedField = field
         if case .title(let itemID) = field {
@@ -222,11 +222,11 @@ struct DetailView: View {
             return
         }
 
-        let itemID = model.makeTodoID()
+        let itemID = model.makeTaskID()
         pendingDraftFocusID = itemID
         pendingScrollItemID = itemID
         draftPreviousItemID = previousItemID
-        draftItem = TodoItem(
+        draftItem = TaskItem(
             id: itemID,
             title: "",
             collection: collection ?? collectionForNewDraft(after: previousItemID)
@@ -243,11 +243,11 @@ struct DetailView: View {
             return previousItem.collection
         }
 
-        return model.visibleItems.last?.collection ?? TodoStore.defaultCollection
+        return model.visibleItems.last?.collection ?? TaskStore.defaultCollection
     }
 
-    private func createTodoFromDroppedFile(_ fileURL: URL) {
-        guard let item = model.createTodo(
+    private func createTaskFromDroppedFile(_ fileURL: URL) {
+        guard let item = model.createTask(
             title: fileURL.lastPathComponent,
             collection: collectionForNewDraft(after: nil)
         ) else {
@@ -258,7 +258,7 @@ struct DetailView: View {
         focusTextField(.title(item.id))
     }
 
-    private func focusLatestTodoField() {
+    private func focusLatestTaskField() {
         if let pendingDraftItem {
             persistFocusedDraftKeepingFocus(pendingDraftItem)
             focusTextField(.title(pendingDraftItem.id))
@@ -267,7 +267,7 @@ struct DetailView: View {
         }
     }
 
-    private func persistFocusedDraftKeepingFocus(_ draftItem: TodoItem) {
+    private func persistFocusedDraftKeepingFocus(_ draftItem: TaskItem) {
         guard focusedField == .title(draftItem.id) else {
             return
         }
@@ -280,7 +280,7 @@ struct DetailView: View {
         saveDraft(draftItem, title: title, newFocus: .title(draftItem.id))
     }
 
-    private func defocusTodoField() {
+    private func defocusTaskField() {
         saveFocusedDraftBeforeDefocus()
         focusedField = nil
     }
@@ -294,7 +294,7 @@ struct DetailView: View {
         saveDraft(pendingDraftItem, title: currentDraftTitle(pendingDraftItem), newFocus: nil)
     }
 
-    private func settlePendingDraftBeforeDragging(_ draggedItem: TodoItem) {
+    private func settlePendingDraftBeforeDragging(_ draggedItem: TaskItem) {
         guard let pendingDraftItem else {
             return
         }
@@ -312,17 +312,17 @@ struct DetailView: View {
         }
     }
 
-    private func currentDraftTitle(_ item: TodoItem) -> String {
+    private func currentDraftTitle(_ item: TaskItem) -> String {
         (NSApp.keyWindow?.firstResponder as? NSTextView)?.string
             ?? editedTitle(for: item)
     }
 
-    private func editedTitle(for item: TodoItem) -> String {
+    private func editedTitle(for item: TaskItem) -> String {
         activeTitleEdit?.id == item.id ? activeTitleEdit?.title ?? item.title : item.title
     }
 
     private func updateActiveTitleEdit(id: String, title: String) {
-        activeTitleEdit = ActiveTodoTitleEdit(id: id, title: title)
+        activeTitleEdit = ActiveTaskTitleEdit(id: id, title: title)
     }
 
     private func clearActiveTitleEdit(id: String) {
@@ -331,7 +331,7 @@ struct DetailView: View {
         }
     }
 
-    private var pendingDraftItem: TodoItem? {
+    private var pendingDraftItem: TaskItem? {
         guard let draftItem, !hasStoredItem(id: draftItem.id) else {
             return nil
         }
@@ -339,7 +339,7 @@ struct DetailView: View {
         return draftItem
     }
 
-    private func isPendingDraft(_ item: TodoItem) -> Bool {
+    private func isPendingDraft(_ item: TaskItem) -> Bool {
         pendingDraftItem?.id == item.id
     }
 
@@ -347,7 +347,7 @@ struct DetailView: View {
         model.items.contains { $0.id == id }
     }
 
-    private func saveTitle(_ item: TodoItem, _ title: String, _ newFocus: TodoFocusField?) {
+    private func saveTitle(_ item: TaskItem, _ title: String, _ newFocus: TaskFocusField?) {
         if isPendingDraft(item) {
             saveDraft(item, title: title, newFocus: newFocus)
         } else {
@@ -357,10 +357,10 @@ struct DetailView: View {
     }
 
     private func saveDraft(
-        _ item: TodoItem,
+        _ item: TaskItem,
         title: String,
-        newFocus: TodoFocusField?,
-        status: TodoStatus = .draft
+        newFocus: TaskFocusField?,
+        status: TaskStatus = .draft
     ) {
         guard isPendingDraft(item) else {
             return
@@ -379,7 +379,7 @@ struct DetailView: View {
         let focusSelectionBehavior = titleFocusSelectionBehavior(for: item, fallback: .moveInsertionPointToEnd)
         discardDraft(item.id)
 
-        if model.createTodo(title: title, collection: collection, id: item.id, status: status) != nil {
+        if model.createTask(title: title, collection: collection, id: item.id, status: status) != nil {
             if let previousItemID {
                 model.reorderItem(id: item.id, after: previousItemID, before: nil)
             }
@@ -388,7 +388,7 @@ struct DetailView: View {
                 focusTextField(.title(item.id), selectionBehavior: focusSelectionBehavior)
             }
         } else {
-            draftItem = TodoItem(
+            draftItem = TaskItem(
                 id: item.id,
                 title: title,
                 collection: collection,
@@ -401,9 +401,9 @@ struct DetailView: View {
     }
 
     private func titleFocusSelectionBehavior(
-        for item: TodoItem,
-        fallback: TodoFocusSelectionBehavior
-    ) -> TodoFocusSelectionBehavior {
+        for item: TaskItem,
+        fallback: TaskFocusSelectionBehavior
+    ) -> TaskFocusSelectionBehavior {
         guard focusedField == .title(item.id),
               let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
             return fallback
@@ -425,7 +425,7 @@ struct DetailView: View {
         clearActiveTitleEdit(id: id)
     }
 
-    private func moveToCollection(_ item: TodoItem, _ collection: String) {
+    private func moveToCollection(_ item: TaskItem, _ collection: String) {
         if isPendingDraft(item) {
             draftItem?.collection = collection
         } else {
@@ -433,7 +433,7 @@ struct DetailView: View {
         }
     }
 
-    private func insertDraftBelow(_ item: TodoItem, title: String) {
+    private func insertDraftBelow(_ item: TaskItem, title: String) {
         if isPendingDraft(item) {
             commitPendingDraftAndMaterializeNext(
                 item,
@@ -447,9 +447,9 @@ struct DetailView: View {
     }
 
     private func commitPendingDraftAndMaterializeNext(
-        _ item: TodoItem,
+        _ item: TaskItem,
         title: String,
-        status: TodoStatus
+        status: TaskStatus
     ) {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty else {
@@ -460,7 +460,7 @@ struct DetailView: View {
         let collection = draftItem?.collection ?? item.collection
         let previousItemID = draftPreviousItemID
         let committedItemID = uniqueDraftCommitID(excluding: item.id)
-        let committedItem = TodoItem(
+        let committedItem = TaskItem(
             id: committedItemID,
             title: title,
             collection: collection,
@@ -472,9 +472,9 @@ struct DetailView: View {
         committedDraftItems.append(committedItem)
         committedDraftPreviousItemIDs[committedItemID] = previousItemID
         draftPreviousItemID = committedItemID
-        draftItem = TodoItem(id: item.id, title: "", collection: collection)
+        draftItem = TaskItem(id: item.id, title: "", collection: collection)
 
-        model.createTodoInBackground(
+        model.createTaskInBackground(
             title: title,
             collection: collection,
             id: committedItemID,
@@ -490,14 +490,14 @@ struct DetailView: View {
     }
 
     private func uniqueDraftCommitID(excluding draftID: String) -> String {
-        var id = model.makeTodoID()
+        var id = model.makeTaskID()
         while id == draftID || committedDraftItems.contains(where: { $0.id == id }) {
-            id = model.makeTodoID()
+            id = model.makeTaskID()
         }
         return id
     }
 
-    private func hasVisibleItemAfter(_ item: TodoItem) -> Bool {
+    private func hasVisibleItemAfter(_ item: TaskItem) -> Bool {
         let visibleItems = self.visibleItems
         guard let index = visibleItems.firstIndex(where: { $0.id == item.id }) else {
             return false
@@ -508,9 +508,9 @@ struct DetailView: View {
 
     @discardableResult
     private func moveFocus(
-        from item: TodoItem,
-        direction: TodoFocusDirection,
-        selectionBehavior: TodoFocusSelectionBehavior = .moveInsertionPointToEnd
+        from item: TaskItem,
+        direction: TaskFocusDirection,
+        selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd
     ) -> Bool {
         let visibleItems = self.visibleItems
         guard let index = visibleItems.firstIndex(where: { $0.id == item.id }) else {
@@ -519,15 +519,31 @@ struct DetailView: View {
 
         switch direction {
         case .up:
+            if focusedField == .note(item.id) {
+                clearCurrentTextFieldSelection()
+                focusTextField(.title(item.id), selectionBehavior: selectionBehavior)
+                return true
+            }
+
             guard index > 0 else {
                 return false
             }
 
             clearCurrentTextFieldSelection()
-            focusTextField(.title(visibleItems[index - 1].id), selectionBehavior: selectionBehavior)
+            let previousItem = visibleItems[index - 1]
+            focusTextField(
+                previousItem.notes.isEmpty ? .title(previousItem.id) : .note(previousItem.id),
+                selectionBehavior: selectionBehavior
+            )
             return true
 
         case .down:
+            if focusedField == .title(item.id), !item.notes.isEmpty {
+                clearCurrentTextFieldSelection()
+                focusTextField(.note(item.id), selectionBehavior: selectionBehavior)
+                return true
+            }
+
             guard visibleItems.indices.contains(index + 1) else {
                 return false
             }
@@ -538,7 +554,7 @@ struct DetailView: View {
         }
     }
 
-    private func deleteAndFocusPrevious(_ item: TodoItem) {
+    private func deleteAndFocusPrevious(_ item: TaskItem) {
         let focusTarget = focusTargetAfterDeleting(item)
         let deleted: Bool
 
@@ -561,8 +577,8 @@ struct DetailView: View {
     }
 
     private func deleteEmptyAndMoveFocusDown(
-        _ item: TodoItem,
-        selectionBehavior: TodoFocusSelectionBehavior = .moveInsertionPointToEnd
+        _ item: TaskItem,
+        selectionBehavior: TaskFocusSelectionBehavior = .moveInsertionPointToEnd
     ) -> Bool {
         let visibleItems = self.visibleItems
         guard let index = visibleItems.firstIndex(where: { $0.id == item.id }) else {
@@ -573,7 +589,7 @@ struct DetailView: View {
             return true
         }
 
-        let focusTarget = TodoFocusField.title(visibleItems[index + 1].id)
+        let focusTarget = TaskFocusField.title(visibleItems[index + 1].id)
         let deleted: Bool
         if isPendingDraft(item) {
             discardDraft(item.id)
@@ -593,8 +609,8 @@ struct DetailView: View {
     }
 
     private func focusTargetAfterDeleting(
-        _ item: TodoItem
-    ) -> (field: TodoFocusField, selectionBehavior: TodoFocusSelectionBehavior)? {
+        _ item: TaskItem
+    ) -> (field: TaskFocusField, selectionBehavior: TaskFocusSelectionBehavior)? {
         let visibleItems = self.visibleItems
         guard let index = visibleItems.firstIndex(where: { $0.id == item.id }) else {
             return nil
@@ -618,13 +634,13 @@ struct DetailView: View {
     }
 }
 
-private struct TodoRowRenderIdentity: Hashable {
+private struct TaskRowRenderIdentity: Hashable {
     var itemID: String
     var isPendingDraft: Bool
 }
 
-private extension Array where Element == TodoItem {
-    func insertingDraft(_ draftItem: TodoItem, after previousItemID: String?) -> [TodoItem] {
+private extension Array where Element == TaskItem {
+    func insertingDraft(_ draftItem: TaskItem, after previousItemID: String?) -> [TaskItem] {
         guard let previousItemID,
               let previousIndex = firstIndex(where: { $0.id == previousItemID }) else {
             return self + [draftItem]
@@ -636,9 +652,9 @@ private extension Array where Element == TodoItem {
     }
 
     func insertingCommittedDrafts(
-        _ drafts: [TodoItem],
+        _ drafts: [TaskItem],
         previousItemIDs: [String: String?]
-    ) -> [TodoItem] {
+    ) -> [TaskItem] {
         drafts.reduce(self) { items, draft in
             guard !items.contains(where: { $0.id == draft.id }) else {
                 return items
@@ -650,7 +666,7 @@ private extension Array where Element == TodoItem {
 }
 
 private struct DetailToolbar: ToolbarContent {
-    @EnvironmentObject private var model: TodoAppModel
+    @EnvironmentObject private var model: TaskAppModel
 
     var body: some ToolbarContent {
         ToolbarItem {
@@ -659,6 +675,7 @@ private struct DetailToolbar: ToolbarContent {
                     CollectionActionMenuItems(
                         collection: collection,
                         showsCLICommand: true,
+                        showsExport: true,
                         bulkStatusScope: .visibleItems
                     )
                 } else {
@@ -673,14 +690,14 @@ private struct DetailToolbar: ToolbarContent {
                 Image(systemName: "ellipsis")
             }
             .menuIndicator(.hidden)
-            .help("Todo options")
+            .help("Task options")
         }
     }
 }
 
-private struct TodoRowDropDelegate: DropDelegate {
-    let item: TodoItem
-    let visibleItems: [TodoItem]
+private struct TaskRowDropDelegate: DropDelegate {
+    let item: TaskItem
+    let visibleItems: [TaskItem]
     @Binding var draggedItemID: String?
     @Binding var didReorderDraggedItem: Bool
     let moveItem: (String, String?, String?) -> Void
@@ -733,7 +750,7 @@ private struct TodoRowDropDelegate: DropDelegate {
     }
 }
 
-private struct TodoListDropDelegate: DropDelegate {
+private struct TaskListDropDelegate: DropDelegate {
     let finishDragging: () -> Void
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -746,8 +763,8 @@ private struct TodoListDropDelegate: DropDelegate {
     }
 }
 
-private enum TodoItemDrag {
-    static let type = UTType(exportedAs: "dev.kymok.pond.todo-item")
+private enum TaskItemDrag {
+    static let type = UTType(exportedAs: "dev.kymok.pond.task-item")
     static let acceptedTypes = [type]
 
     static func itemProvider(id: String) -> NSItemProvider {
@@ -760,9 +777,9 @@ private enum TodoItemDrag {
     }
 }
 
-private struct DraftTodoRow: View {
+private struct DraftTaskRow: View {
     let materializeDraft: () -> Void
-    let createTodoFromDroppedFile: (URL) -> Void
+    let createTaskFromDroppedFile: (URL) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -771,22 +788,22 @@ private struct DraftTodoRow: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 24, height: 24)
                 .alignmentGuide(.top) { dimensions in
-                    dimensions[VerticalAlignment.center] - TodoRowLayout.titleFirstLineCenterY
+                    dimensions[VerticalAlignment.center] - TaskRowLayout.titleFirstLineCenterY
                 }
 
             Color.clear
                 .frame(width: 24, height: 24)
                 .alignmentGuide(.top) { dimensions in
-                    dimensions[VerticalAlignment.center] - TodoRowLayout.titleFirstLineCenterY
+                    dimensions[VerticalAlignment.center] - TaskRowLayout.titleFirstLineCenterY
                 }
 
             Text("Title")
-                .frame(height: TodoRowLayout.titleLineHeight, alignment: .center)
+                .frame(height: TaskRowLayout.titleLineHeight, alignment: .center)
                 .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, TodoRowLayout.rowVerticalPadding)
+        .padding(.vertical, TaskRowLayout.rowVerticalPadding)
         .padding(.horizontal, 12)
-        .frame(minHeight: TodoRowLayout.rowMinHeight)
+        .frame(minHeight: TaskRowLayout.rowMinHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture(perform: materializeDraft)
@@ -804,7 +821,7 @@ private struct DraftTodoRow: View {
             }
 
             DispatchQueue.main.async {
-                createTodoFromDroppedFile(fileURL)
+                createTaskFromDroppedFile(fileURL)
             }
         }
 

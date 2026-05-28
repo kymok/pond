@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
-import TodoCore
+import TaskCore
 
 struct ContentView: View {
-    @EnvironmentObject private var model: TodoAppModel
+    @EnvironmentObject private var model: TaskAppModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
@@ -34,11 +34,11 @@ struct ContentView: View {
                 cancel: model.cancelBulkStatusChange
             )
         }
-        .sheet(item: $model.assigneeEditRequest) { request in
-            AssigneeEditSheet(
+        .sheet(item: $model.collectionPromptEditRequest) { request in
+            CollectionPromptSheet(
                 request: request,
-                save: model.confirmAssigneeEdit,
-                cancel: model.cancelAssigneeEdit
+                save: model.confirmCollectionPromptEdit,
+                cancel: model.cancelCollectionPromptEdit
             )
         }
         .onChange(of: scenePhase) { _, phase in
@@ -108,47 +108,43 @@ struct ContentView: View {
     }
 }
 
-private func deleteCollectionMessage(for collection: TodoCollectionSummary) -> String {
-    let itemLabel = collection.totalCount == 1 ? "todo" : "todos"
-    return "This will delete \"\(collection.name)\" and \(collection.totalCount) \(itemLabel)."
-}
-
-private enum BulkStatusSelection: Hashable {
-    case noChange
-    case status(TodoStatus)
-}
-
-private struct AssigneeEditSheet: View {
-    let request: TodoAssigneeEditRequest
-    let save: (TodoItem, [String]) -> Void
+private struct CollectionPromptSheet: View {
+    let request: TaskCollectionPromptEditRequest
+    let save: (TaskCollectionSummary, String) -> Void
     let cancel: () -> Void
 
-    @State private var assignees: [String]
+    @State private var promptTemplate: String
 
     init(
-        request: TodoAssigneeEditRequest,
-        save: @escaping (TodoItem, [String]) -> Void,
+        request: TaskCollectionPromptEditRequest,
+        save: @escaping (TaskCollectionSummary, String) -> Void,
         cancel: @escaping () -> Void
     ) {
         self.request = request
         self.save = save
         self.cancel = cancel
-        _assignees = State(initialValue: request.item.assignees)
+        _promptTemplate = State(initialValue: request.collection.promptTemplate ?? "")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Assignees")
+            Text("Collection Prompt")
                 .font(.headline)
 
-            AssigneeTokenField(tokens: $assignees)
-                .frame(height: AssigneeTokenField.height)
+            PromptTemplateEditor(
+                text: $promptTemplate,
+                height: 180
+            )
 
             HStack {
-                Button("Clear") {
-                    save(request.item, [])
+                Button("Reset to Default") {
+                    promptTemplate = inheritedPromptTemplate
                 }
-                .disabled(cleanAssignees.isEmpty)
+
+                Button("Clear") {
+                    promptTemplate = ""
+                }
+                .disabled(promptTemplate.isEmpty)
 
                 Spacer()
 
@@ -158,138 +154,40 @@ private struct AssigneeEditSheet: View {
                 .keyboardShortcut(.cancelAction)
 
                 Button("Save") {
-                    saveAssignees()
+                    save(request.collection, promptTemplate)
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
-        .frame(width: 360)
+        .frame(width: 560)
     }
 
-    private var cleanAssignees: [String] {
-        Self.cleanAssignees(assignees)
-    }
-
-    private static func cleanAssignees(_ assignees: [String]) -> [String] {
-        var seen: Set<String> = []
-        return assignees.compactMap { assignee in
-            let clean = assignee.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !clean.isEmpty, seen.insert(clean).inserted else {
-                return nil
-            }
-
-            return clean
-        }
-    }
-
-    private func saveAssignees() {
-        save(request.item, cleanAssignees)
+    private var inheritedPromptTemplate: String {
+        TaskPromptSettings.effectiveDefaultPromptTemplate
     }
 }
 
-private struct AssigneeTokenField: NSViewRepresentable {
-    static let height: CGFloat = 84
+private func deleteCollectionMessage(for collection: TaskCollectionSummary) -> String {
+    let itemLabel = collection.totalCount == 1 ? "task" : "tasks"
+    return "This will delete \"\(collection.name)\" and \(collection.totalCount) \(itemLabel)."
+}
 
-    @Binding var tokens: [String]
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(tokens: $tokens)
-    }
-
-    func makeNSView(context: Context) -> NSTokenField {
-        let tokenField = MultilineTokenField()
-        tokenField.delegate = context.coordinator
-        tokenField.tokenizingCharacterSet = CharacterSet(charactersIn: ",\n")
-        tokenField.placeholderString = "Assignees"
-        tokenField.objectValue = tokens
-        tokenField.usesSingleLineMode = false
-        tokenField.lineBreakMode = .byWordWrapping
-        tokenField.cell?.usesSingleLineMode = false
-        tokenField.cell?.wraps = true
-        tokenField.cell?.isScrollable = false
-        return tokenField
-    }
-
-    func updateNSView(_ tokenField: NSTokenField, context: Context) {
-        context.coordinator.tokens = $tokens
-        let currentTokens = Coordinator.cleanTokens(from: tokenField.objectValue)
-        let cleanTokens = Coordinator.cleanTokens(tokens)
-        if currentTokens != cleanTokens {
-            tokenField.objectValue = cleanTokens
-        }
-    }
-
-    final class Coordinator: NSObject, NSTokenFieldDelegate {
-        var tokens: Binding<[String]>
-
-        init(tokens: Binding<[String]>) {
-            self.tokens = tokens
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            updateTokens(from: notification)
-        }
-
-        func controlTextDidEndEditing(_ notification: Notification) {
-            updateTokens(from: notification)
-        }
-
-        @MainActor
-        private func updateTokens(from notification: Notification) {
-            guard let tokenField = notification.object as? NSTokenField else {
-                return
-            }
-
-            tokens.wrappedValue = Self.cleanTokens(from: tokenField.objectValue)
-        }
-
-        static func cleanTokens(from objectValue: Any?) -> [String] {
-            if let tokens = objectValue as? [String] {
-                return cleanTokens(tokens)
-            }
-
-            if let values = objectValue as? [Any] {
-                return cleanTokens(values.map { String(describing: $0) })
-            }
-
-            if let string = objectValue as? String {
-                return cleanTokens(string.split { $0 == "," || $0.isNewline }.map(String.init))
-            }
-
-            return []
-        }
-
-        static func cleanTokens(_ tokens: [String]) -> [String] {
-            var seen: Set<String> = []
-            return tokens.compactMap { token in
-                let clean = token.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !clean.isEmpty, seen.insert(clean).inserted else {
-                    return nil
-                }
-
-                return clean
-            }
-        }
-    }
-
-    final class MultilineTokenField: NSTokenField {
-        override var intrinsicContentSize: NSSize {
-            NSSize(width: NSView.noIntrinsicMetric, height: AssigneeTokenField.height)
-        }
-    }
+private enum BulkStatusSelection: Hashable {
+    case noChange
+    case status(TaskStatus)
 }
 
 private struct BulkStatusChangeSheet: View {
-    let request: TodoBulkStatusChangeRequest
-    let confirm: ([TodoStatus: TodoStatus]) -> Bool
+    let request: TaskBulkStatusChangeRequest
+    let confirm: ([TaskStatus: TaskStatus]) -> Bool
     let cancel: () -> Void
 
-    @State private var selections: [TodoStatus: BulkStatusSelection]
+    @State private var selections: [TaskStatus: BulkStatusSelection]
 
     init(
-        request: TodoBulkStatusChangeRequest,
-        confirm: @escaping ([TodoStatus: TodoStatus]) -> Bool,
+        request: TaskBulkStatusChangeRequest,
+        confirm: @escaping ([TaskStatus: TaskStatus]) -> Bool,
         cancel: @escaping () -> Void
     ) {
         self.request = request
@@ -297,7 +195,7 @@ private struct BulkStatusChangeSheet: View {
         self.cancel = cancel
         _selections = State(
             initialValue: Dictionary(
-                uniqueKeysWithValues: TodoStatus.allCases.map { ($0, BulkStatusSelection.noChange) }
+                uniqueKeysWithValues: TaskStatus.allCases.map { ($0, BulkStatusSelection.noChange) }
             )
         )
     }
@@ -308,7 +206,7 @@ private struct BulkStatusChangeSheet: View {
                 .font(.headline)
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
-                ForEach(TodoStatus.allCases, id: \.self) { status in
+                ForEach(TaskStatus.allCases, id: \.self) { status in
                     GridRow {
                         statusLabel(for: status)
                             .frame(width: 128, alignment: .leading)
@@ -316,7 +214,7 @@ private struct BulkStatusChangeSheet: View {
                         Picker("Change \(status.displayName) to", selection: selection(for: status)) {
                             Text("No change").tag(BulkStatusSelection.noChange)
 
-                            ForEach(TodoStatus.allCases, id: \.self) { replacement in
+                            ForEach(TaskStatus.allCases, id: \.self) { replacement in
                                 statusLabel(for: replacement)
                                     .tag(BulkStatusSelection.status(replacement))
                             }
@@ -346,7 +244,7 @@ private struct BulkStatusChangeSheet: View {
         .frame(width: 380)
     }
 
-    private var replacements: [TodoStatus: TodoStatus] {
+    private var replacements: [TaskStatus: TaskStatus] {
         Dictionary(
             uniqueKeysWithValues: selections.compactMap { status, selection in
                 guard case .status(let replacement) = selection, replacement != status else {
@@ -358,7 +256,7 @@ private struct BulkStatusChangeSheet: View {
         )
     }
 
-    private func selection(for status: TodoStatus) -> Binding<BulkStatusSelection> {
+    private func selection(for status: TaskStatus) -> Binding<BulkStatusSelection> {
         Binding {
             selections[status, default: .noChange]
         } set: { selection in
@@ -366,7 +264,7 @@ private struct BulkStatusChangeSheet: View {
         }
     }
 
-    private func statusLabel(for status: TodoStatus) -> some View {
-        TodoStatusLabel(status: status)
+    private func statusLabel(for status: TaskStatus) -> some View {
+        TaskStatusLabel(status: status)
     }
 }

@@ -1,13 +1,13 @@
 import XCTest
-@testable import TodoCore
+@testable import TaskCore
 
 final class CommandLineInstallerTests: XCTestCase {
     func testInstallCanReplaceManagedStaleSymlink() throws {
         let directory = makeDirectory()
         let linkURL = directory.appendingPathComponent("taskpond")
         let recordURL = directory.appendingPathComponent("cli-install.json")
-        let oldTargetURL = try makeExecutable(named: "old-todo", in: directory)
-        let newTargetURL = try makeExecutable(named: "new-todo", in: directory)
+        let oldTargetURL = try makeExecutable(named: "old-task", in: directory)
+        let newTargetURL = try makeExecutable(named: "new-task", in: directory)
 
         try CommandLineInstaller(
             linkURL: linkURL,
@@ -39,8 +39,8 @@ final class CommandLineInstallerTests: XCTestCase {
     func testUnmanagedSymlinkIsStillTreatedAsConflict() throws {
         let directory = makeDirectory()
         let linkURL = directory.appendingPathComponent("taskpond")
-        let targetURL = try makeExecutable(named: "target-todo", in: directory)
-        let otherURL = try makeExecutable(named: "other-todo", in: directory)
+        let targetURL = try makeExecutable(named: "target-task", in: directory)
+        let otherURL = try makeExecutable(named: "other-task", in: directory)
         try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: otherURL)
 
         let status = CommandLineInstaller(

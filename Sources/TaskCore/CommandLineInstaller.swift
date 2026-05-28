@@ -39,7 +39,7 @@ public final class CommandLineInstaller: @unchecked Sendable {
     public init(
         linkURL: URL = CommandLineInstaller.defaultLinkURL(),
         targetURL: URL? = nil,
-        recordURL: URL = TodoStore.appSupportDirectory().appendingPathComponent("cli-install.json")
+        recordURL: URL = TaskStore.appSupportDirectory().appendingPathComponent("cli-install.json")
     ) {
         self.linkURL = linkURL
         self.targetURL = targetURL ?? CommandLineInstaller.inferTargetURL()

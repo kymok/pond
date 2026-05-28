@@ -1,8 +1,8 @@
 import Foundation
-import TodoCore
+import TaskCore
 
 @main
-struct TodoCommand {
+struct TaskCommand {
     static func main() {
         do {
             try run(Array(CommandLine.arguments.dropFirst()))
@@ -42,8 +42,8 @@ struct TodoCommand {
             try itemGet(Array(arguments.dropFirst()))
         case "update":
             try itemUpdate(Array(arguments.dropFirst()))
-        case "assign":
-            try itemAssign(Array(arguments.dropFirst()))
+        case "note":
+            try itemNote(Array(arguments.dropFirst()))
         case "delete":
             try itemDelete(Array(arguments.dropFirst()))
         case "-h", "--help", "help":
@@ -81,9 +81,9 @@ struct TodoCommand {
     private static func itemCreate(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let input = try parser.takeCreateInput()
-        let item = try TodoStore().add(
+        let item = try TaskStore().add(
             title: input.title,
-            collection: input.collection ?? TodoStore.defaultCollection
+            collection: input.collection ?? TaskStore.defaultCollection
         )
 
         try printItems([item])
@@ -92,9 +92,8 @@ struct TodoCommand {
     private static func itemGet(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let input = try parser.takeGetInput()
-        let items = try TodoStore().items(
+        let items = try TaskStore().items(
             status: input.status,
-            priority: input.priority,
             collection: input.target.collection,
             ids: input.target.ids
         )
@@ -105,24 +104,61 @@ struct TodoCommand {
     private static func itemUpdate(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let input = try parser.takeUpdateInput()
-        let item = try TodoStore().update(
+        let item = try TaskStore().update(
             id: input.id,
             title: input.title,
             collection: input.collection,
-            status: input.status,
-            priority: input.priority
+            status: input.status
         )
 
         try printItems([item])
     }
 
-    private static func itemAssign(_ arguments: [String]) throws {
+    private static func itemNote(_ arguments: [String]) throws {
+        guard let subcommand = arguments.first else {
+            throw CLIError.expectedNoteSubcommand
+        }
+
+        switch subcommand {
+        case "add":
+            try itemNoteAdd(Array(arguments.dropFirst()))
+        case "update":
+            try itemNoteUpdate(Array(arguments.dropFirst()))
+        case "delete":
+            try itemNoteDelete(Array(arguments.dropFirst()))
+        case "-h", "--help", "help":
+            printUsage()
+        default:
+            throw CLIError.unknownNoteSubcommand(subcommand)
+        }
+    }
+
+    private static func itemNoteAdd(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
-        let input = try parser.takeAssignInput()
-        let item = try TodoStore().assign(
-            id: input.id,
-            assignees: input.assignees
+        let input = try parser.takeNoteAddInput()
+        let item = try TaskStore().addNote(
+            id: input.itemID,
+            body: input.body
         )
+
+        try printItems([item])
+    }
+
+    private static func itemNoteUpdate(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let input = try parser.takeNoteUpdateInput()
+        let item = try TaskStore().updateNote(
+            id: input.itemID,
+            body: input.body
+        )
+
+        try printItems([item])
+    }
+
+    private static func itemNoteDelete(_ arguments: [String]) throws {
+        var parser = ArgumentScanner(arguments)
+        let input = try parser.takeNoteDeleteInput()
+        let item = try TaskStore().deleteNote(id: input.itemID)
 
         try printItems([item])
     }
@@ -130,7 +166,7 @@ struct TodoCommand {
     private static func itemDelete(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let target = try parser.takeTarget(allowEmpty: false)
-        let items = try TodoStore().delete(ids: target.ids, collection: target.collection)
+        let items = try TaskStore().delete(ids: target.ids, collection: target.collection)
 
         try printItems(items)
     }
@@ -138,14 +174,14 @@ struct TodoCommand {
     private static func collectionList(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         try parser.rejectRemainingArguments()
-        let collections = try TodoStore().collectionSummaries()
+        let collections = try TaskStore().collectionSummaries()
         try printCollections(collections)
     }
 
     private static func collectionCreate(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let name = try parser.takeCollectionName()
-        let store = TodoStore()
+        let store = TaskStore()
         let collection = try store.createCollection(name: name)
 
         try printCollection(named: collection, in: store)
@@ -154,7 +190,7 @@ struct TodoCommand {
     private static func collectionRename(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let input = try parser.takeRenameInput()
-        let store = TodoStore()
+        let store = TaskStore()
         let collection = try store.renameCollection(from: input.oldName, to: input.newName)
 
         try printCollection(named: collection, in: store)
@@ -163,7 +199,7 @@ struct TodoCommand {
     private static func collectionColor(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let input = try parser.takeColorInput()
-        let collection = try TodoStore().setCollectionColor(name: input.name, color: input.color)
+        let collection = try TaskStore().setCollectionColor(name: input.name, color: input.color)
 
         try printCollections([collection])
     }
@@ -171,7 +207,7 @@ struct TodoCommand {
     private static func collectionDelete(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let name = try parser.takeCollectionName()
-        let store = TodoStore()
+        let store = TaskStore()
         let collection = try collectionSummary(named: name, in: store)
         _ = try store.deleteCollection(name: name)
 
@@ -181,7 +217,7 @@ struct TodoCommand {
     private static func collectionClear(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         let input = try parser.takeClearInput()
-        let items = try TodoStore().clearItems(
+        let items = try TaskStore().clearItems(
             collection: input.name,
             completedOnly: input.completedOnly
         )
@@ -189,22 +225,22 @@ struct TodoCommand {
         try printItems(items)
     }
 
-    private static func printItems(_ items: [TodoItem]) throws {
+    private static func printItems(_ items: [TaskItem]) throws {
         try printJSON(items.map { ItemOutput(item: $0) })
     }
 
-    private static func printCollections(_ collections: [TodoCollectionSummary]) throws {
+    private static func printCollections(_ collections: [TaskCollectionSummary]) throws {
         try printJSON(collections.map { CollectionOutput(collection: $0) })
     }
 
-    private static func printCollection(named name: String, in store: TodoStore) throws {
+    private static func printCollection(named name: String, in store: TaskStore) throws {
         try printCollections([try collectionSummary(named: name, in: store)])
     }
 
-    private static func collectionSummary(named name: String, in store: TodoStore) throws -> TodoCollectionSummary {
+    private static func collectionSummary(named name: String, in store: TaskStore) throws -> TaskCollectionSummary {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let collection = try store.collectionSummaries().first(where: { $0.name == cleanName }) else {
-            throw TodoStoreError.collectionNotFound(cleanName)
+            throw TaskStoreError.collectionNotFound(cleanName)
         }
 
         return collection
@@ -214,9 +250,11 @@ struct TodoCommand {
         print(
             """
             taskpond item create [-c|--collection <collection>] <title...>
-            taskpond item get [-s|--status <status>] [--priority <priority>] [-c|--collection <collection> | <id...>]
-            taskpond item update <id> [-c|--collection <collection>] [-s|--status <status>] [--priority <priority>] [<title...>]
-            taskpond item assign <id> (--assignee <assignee> ... | --unassign)
+            taskpond item get [-s|--status <status>] [-c|--collection <collection> | <id...>]
+            taskpond item update <id> [-c|--collection <collection>] [-s|--status <status>] [<title...>]
+            taskpond item note add <id> --body <body>
+            taskpond item note update <id> --body <body>
+            taskpond item note delete <id>
             taskpond item delete <-c|--collection <collection> | <id...>>
             taskpond collection list
             taskpond collection create <name>
@@ -249,16 +287,26 @@ private struct ItemOutput: Encodable {
     var status: String
     var collection: String
     var title: String
-    var priority: String
-    var assignees: [String]
+    var note: NoteOutput?
 
-    init(item: TodoItem) {
+    init(item: TaskItem) {
         id = item.id
         status = item.status.rawValue
         collection = item.collection
         title = item.title
-        priority = item.priority.rawValue
-        assignees = item.assignees
+        note = item.notes.first.map { NoteOutput(note: $0) }
+    }
+}
+
+private struct NoteOutput: Encodable {
+    var id: String
+    var version: String
+    var body: String
+
+    init(note: TaskNote) {
+        id = note.id
+        version = note.version
+        body = note.body
     }
 }
 
@@ -269,7 +317,7 @@ private struct CollectionOutput: Encodable {
     var color: String
     var statusIndicator: String?
 
-    init(collection: TodoCollectionSummary) {
+    init(collection: TaskCollectionSummary) {
         name = collection.name
         totalCount = collection.totalCount
         incompleteCount = collection.incompleteCount
@@ -289,8 +337,7 @@ private struct AddInput {
 }
 
 private struct GetInput {
-    var status: TodoStatus?
-    var priority: TodoPriority?
+    var status: TaskStatus?
     var target: Target
 }
 
@@ -298,13 +345,21 @@ private struct UpdateInput {
     var id: String
     var title: String?
     var collection: String?
-    var status: TodoStatus?
-    var priority: TodoPriority?
+    var status: TaskStatus?
 }
 
-private struct AssignInput {
-    var id: String
-    var assignees: [String]
+private struct NoteAddInput {
+    var itemID: String
+    var body: String
+}
+
+private struct NoteUpdateInput {
+    var itemID: String
+    var body: String?
+}
+
+private struct NoteDeleteInput {
+    var itemID: String
 }
 
 private struct RenameInput {
@@ -314,7 +369,7 @@ private struct RenameInput {
 
 private struct ColorInput {
     var name: String
-    var color: TodoCollectionColor
+    var color: TaskCollectionColor
 }
 
 private struct ClearInput {
@@ -330,8 +385,7 @@ private struct ArgumentScanner {
     }
 
     mutating func takeGetInput() throws -> GetInput {
-        var status: TodoStatus?
-        var priority: TodoPriority?
+        var status: TaskStatus?
         var collection: String?
         var ids: [String] = []
 
@@ -344,11 +398,6 @@ private struct ArgumentScanner {
                     throw CLIError.duplicateStatus
                 }
                 status = try takeRequiredStatus()
-            case "--priority":
-                guard priority == nil else {
-                    throw CLIError.duplicatePriority
-                }
-                priority = try takeRequiredPriority()
             case "--collection", "-c":
                 guard collection == nil else {
                     throw CLIError.duplicateCollectionFlag
@@ -363,21 +412,20 @@ private struct ArgumentScanner {
         }
 
         if collection != nil && !ids.isEmpty {
-            throw TodoStoreError.targetConflict
+            throw TaskStoreError.targetConflict
         }
 
-        return GetInput(status: status, priority: priority, target: Target(collection: collection, ids: ids))
+        return GetInput(status: status, target: Target(collection: collection, ids: ids))
     }
 
     mutating func takeUpdateInput() throws -> UpdateInput {
         guard let id = arguments.first else {
-            throw TodoStoreError.missingTarget
+            throw TaskStoreError.missingTarget
         }
         arguments.removeFirst()
 
         var collection: String?
-        var status: TodoStatus?
-        var priority: TodoPriority?
+        var status: TaskStatus?
         var titleParts: [String] = []
 
         while let argument = arguments.first {
@@ -401,11 +449,6 @@ private struct ArgumentScanner {
                     throw CLIError.duplicateStatus
                 }
                 status = try takeRequiredStatus()
-            case "--priority":
-                guard priority == nil else {
-                    throw CLIError.duplicatePriority
-                }
-                priority = try takeRequiredPriority()
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -415,53 +458,44 @@ private struct ArgumentScanner {
         }
 
         let title = titleParts.isEmpty ? nil : titleParts.joined(separator: " ").cliUnescaped
-        guard title != nil || collection != nil || status != nil || priority != nil else {
-            throw TodoStoreError.missingUpdate
+        guard title != nil || collection != nil || status != nil else {
+            throw TaskStoreError.missingUpdate
         }
 
-        return UpdateInput(id: id, title: title, collection: collection, status: status, priority: priority)
+        return UpdateInput(id: id, title: title, collection: collection, status: status)
     }
 
-    mutating func takeAssignInput() throws -> AssignInput {
-        guard let id = arguments.first else {
-            throw TodoStoreError.missingTarget
+    mutating func takeNoteAddInput() throws -> NoteAddInput {
+        guard let itemID = arguments.first else {
+            throw TaskStoreError.missingTarget
         }
         arguments.removeFirst()
 
-        var assignees: [String]?
-        var unassigns = false
+        let body = try takeNoteFields(allowPartial: false)
+        return NoteAddInput(
+            itemID: itemID,
+            body: try requireNoteField(body, missing: .missingNoteBody)
+        )
+    }
 
-        while let argument = arguments.first {
-            arguments.removeFirst()
-
-            switch argument {
-            case "--assignee":
-                guard !unassigns else {
-                    throw CLIError.assigneeConflict
-                }
-                assignees = (assignees ?? []) + [try takeRequiredAssignee()]
-            case "--unassign":
-                guard !unassigns else {
-                    throw CLIError.duplicateUnassign
-                }
-                guard assignees == nil else {
-                    throw CLIError.assigneeConflict
-                }
-                unassigns = true
-                assignees = []
-            default:
-                if argument.hasPrefix("-") {
-                    throw CLIError.unknownOption(argument)
-                }
-                throw CLIError.unexpectedArgument(argument)
-            }
+    mutating func takeNoteUpdateInput() throws -> NoteUpdateInput {
+        guard let itemID = arguments.first else {
+            throw TaskStoreError.missingTarget
         }
+        arguments.removeFirst()
 
-        guard let assignees else {
-            throw CLIError.missingAssignment
+        let body = try takeNoteFields(allowPartial: true)
+        return NoteUpdateInput(itemID: itemID, body: body)
+    }
+
+    mutating func takeNoteDeleteInput() throws -> NoteDeleteInput {
+        guard let itemID = arguments.first else {
+            throw TaskStoreError.missingTarget
         }
+        arguments.removeFirst()
 
-        return AssignInput(id: id, assignees: assignees)
+        try rejectRemainingArguments()
+        return NoteDeleteInput(itemID: itemID)
     }
 
     mutating func takeCreateInput() throws -> AddInput {
@@ -517,11 +551,11 @@ private struct ArgumentScanner {
         }
 
         if collection != nil && !ids.isEmpty {
-            throw TodoStoreError.targetConflict
+            throw TaskStoreError.targetConflict
         }
 
         if !allowEmpty && collection == nil && ids.isEmpty {
-            throw TodoStoreError.missingTarget
+            throw TaskStoreError.missingTarget
         }
 
         return Target(collection: collection, ids: ids)
@@ -563,7 +597,7 @@ private struct ArgumentScanner {
         }
         arguments.removeFirst()
 
-        guard let color = TodoCollectionColor(rawValue: colorValue) else {
+        guard let color = TaskCollectionColor(rawValue: colorValue) else {
             throw CLIError.expectedCollectionColor
         }
 
@@ -619,9 +653,9 @@ private struct ArgumentScanner {
         return value
     }
 
-    private mutating func takeRequiredStatus() throws -> TodoStatus {
+    private mutating func takeRequiredStatus() throws -> TaskStatus {
         guard let value = arguments.first,
-              let status = TodoStatus(rawValue: value) else {
+              let status = TaskStatus(rawValue: value) else {
             throw CLIError.expectedSetState
         }
 
@@ -629,27 +663,48 @@ private struct ArgumentScanner {
         return status
     }
 
-    private mutating func takeRequiredPriority() throws -> TodoPriority {
-        guard let value = arguments.first,
-              let priority = TodoPriority(rawValue: value) else {
-            throw CLIError.expectedPriority
+    private mutating func takeNoteFields(allowPartial: Bool) throws -> String? {
+        var body: String?
+
+        while let argument = arguments.first {
+            arguments.removeFirst()
+
+            switch argument {
+            case "--body":
+                guard body == nil else {
+                    throw CLIError.duplicateNoteBody
+                }
+                body = try takeRequiredNoteValue(missing: .missingNoteBody)
+            default:
+                if argument.hasPrefix("-") {
+                    throw CLIError.unknownOption(argument)
+                }
+                throw CLIError.unexpectedArgument(argument)
+            }
         }
 
-        arguments.removeFirst()
-        return priority
+        if allowPartial, body == nil {
+            throw TaskStoreError.missingNoteUpdate
+        }
+
+        return body
     }
 
-    private mutating func takeRequiredAssignee() throws -> String {
+    private mutating func takeRequiredNoteValue(missing error: CLIError) throws -> String {
         guard let value = arguments.first else {
-            throw CLIError.missingAssignee
+            throw error
         }
 
         arguments.removeFirst()
-        guard !value.cliUnescaped.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw CLIError.emptyAssignee
+        return value.cliUnescaped
+    }
+
+    private func requireNoteField(_ field: String?, missing error: CLIError) throws -> String {
+        guard let field else {
+            throw error
         }
 
-        return value.cliUnescaped
+        return field
     }
 }
 
@@ -694,19 +749,16 @@ private enum CLIError: LocalizedError, Equatable {
     case unknownCommand(String)
     case expectedItemSubcommand
     case unknownItemSubcommand(String)
+    case expectedNoteSubcommand
+    case unknownNoteSubcommand(String)
     case expectedCollectionSubcommand
     case unknownCollectionSubcommand(String)
     case unknownOption(String)
     case expectedSetState
-    case expectedPriority
     case expectedCollectionColor
     case duplicateStatus
-    case duplicatePriority
-    case missingAssignee
-    case emptyAssignee
-    case duplicateUnassign
-    case assigneeConflict
-    case missingAssignment
+    case missingNoteBody
+    case duplicateNoteBody
     case unexpectedArgument(String)
     case missingTitle
     case missingCollection
@@ -720,9 +772,13 @@ private enum CLIError: LocalizedError, Equatable {
         case .unknownCommand(let command):
             "Unknown command '\(command)'."
         case .expectedItemSubcommand:
-            "Expected item subcommand 'create', 'get', 'update', 'assign', or 'delete'."
+            "Expected item subcommand 'create', 'get', 'update', 'note', or 'delete'."
         case .unknownItemSubcommand(let subcommand):
             "Unknown item subcommand '\(subcommand)'."
+        case .expectedNoteSubcommand:
+            "Expected note subcommand 'add', 'update', or 'delete'."
+        case .unknownNoteSubcommand(let subcommand):
+            "Unknown note subcommand '\(subcommand)'."
         case .expectedCollectionSubcommand:
             "Expected collection subcommand 'list', 'create', 'rename', 'color', 'delete', or 'clear'."
         case .unknownCollectionSubcommand(let subcommand):
@@ -730,25 +786,15 @@ private enum CLIError: LocalizedError, Equatable {
         case .unknownOption(let option):
             "Unknown option '\(option)'."
         case .expectedSetState:
-            "Expected 'ready', 'draft', 'in-progress', 'completed', 'on-hold', or 'aborted'."
-        case .expectedPriority:
-            "Expected 'normal' or 'prioritized'."
+            "Expected 'ready', 'draft', 'in-progress', 'completed', 'on-hold', 'aborted', or 'rejected'."
         case .expectedCollectionColor:
             "Expected 'gray', 'red', 'orange', 'yellow', 'green', 'blue', or 'purple'."
         case .duplicateStatus:
-            "Todo status can only be specified once."
-        case .duplicatePriority:
-            "Todo priority can only be specified once."
-        case .missingAssignee:
-            "Expected an assignee after --assignee."
-        case .emptyAssignee:
-            "Assignee cannot be empty. Use --unassign to clear assignees."
-        case .duplicateUnassign:
-            "--unassign can only be specified once."
-        case .assigneeConflict:
-            "Use either --assignee or --unassign, not both."
-        case .missingAssignment:
-            "Assign requires --assignee or --unassign."
+            "Task status can only be specified once."
+        case .missingNoteBody:
+            "Expected a note body after --body."
+        case .duplicateNoteBody:
+            "--body can only be specified once."
         case .unexpectedArgument(let argument):
             "Unexpected argument '\(argument)'."
         case .missingTitle:

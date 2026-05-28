@@ -8,23 +8,23 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .library(name: "TodoCore", targets: ["TodoCore"]),
+        .library(name: "TaskCore", targets: ["TaskCore"]),
         .executable(name: "Pond", targets: ["PondApp"]),
-        .executable(name: "taskpond", targets: ["TodoCLI"])
+        .executable(name: "taskpond", targets: ["TaskCLI"])
     ],
     targets: [
-        .target(name: "TodoCore"),
+        .target(name: "TaskCore"),
         .executableTarget(
             name: "PondApp",
-            dependencies: ["TodoCore"]
+            dependencies: ["TaskCore"]
         ),
         .executableTarget(
-            name: "TodoCLI",
-            dependencies: ["TodoCore"]
+            name: "TaskCLI",
+            dependencies: ["TaskCore"]
         ),
         .testTarget(
-            name: "TodoCoreTests",
-            dependencies: ["TodoCore"]
+            name: "TaskCoreTests",
+            dependencies: ["TaskCore"]
         )
     ]
 )

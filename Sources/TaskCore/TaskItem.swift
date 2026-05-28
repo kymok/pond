@@ -1,13 +1,34 @@
 import Foundation
 
-public struct TodoItem: Codable, Identifiable, Equatable, Sendable {
+public struct TaskNote: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var version: String
+    public var body: String
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: String,
+        version: String = TaskItem.makeVersion(),
+        body: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.version = version
+        self.body = body
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public struct TaskItem: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var version: String
     public var title: String
     public var collection: String
-    public var assignees: [String]
-    public var priority: TodoPriority
-    public var status: TodoStatus
+    public var notes: [TaskNote]
+    public var status: TaskStatus
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -18,9 +39,8 @@ public struct TodoItem: Codable, Identifiable, Equatable, Sendable {
         case version
         case title
         case collection
-        case assignees
-        case assignee
-        case priority
+        case note
+        case notes
         case status
         case createdAt
         case updatedAt
@@ -33,9 +53,8 @@ public struct TodoItem: Codable, Identifiable, Equatable, Sendable {
         version: String = Self.makeVersion(),
         title: String,
         collection: String,
-        assignees: [String] = [],
-        priority: TodoPriority = .normal,
-        status: TodoStatus = .ready,
+        notes: [TaskNote] = [],
+        status: TaskStatus = .ready,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -43,8 +62,7 @@ public struct TodoItem: Codable, Identifiable, Equatable, Sendable {
         self.version = version
         self.title = title
         self.collection = collection
-        self.assignees = Self.normalizedAssignees(assignees)
-        self.priority = priority
+        self.notes = notes
         self.status = status
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -71,15 +89,8 @@ public struct TodoItem: Codable, Identifiable, Equatable, Sendable {
         }
         title = try container.decode(String.self, forKey: .title)
         collection = try container.decode(String.self, forKey: .collection)
-        if let decodedAssignees = try container.decodeIfPresent([String].self, forKey: .assignees) {
-            assignees = Self.normalizedAssignees(decodedAssignees)
-        } else if let decodedAssignee = try container.decodeIfPresent(String.self, forKey: .assignee) {
-            assignees = Self.normalizedAssignees([decodedAssignee])
-        } else {
-            assignees = []
-        }
-        priority = try container.decodeIfPresent(TodoPriority.self, forKey: .priority) ?? .normal
-        if let decodedStatus = try container.decodeIfPresent(TodoStatus.self, forKey: .status) {
+        notes = try container.decodeIfPresent(TaskNote.self, forKey: .note).map { [$0] } ?? []
+        if let decodedStatus = try container.decodeIfPresent(TaskStatus.self, forKey: .status) {
             status = decodedStatus
         } else {
             let isDone = try container.decodeIfPresent(Bool.self, forKey: .isDone) ?? false
@@ -96,50 +107,22 @@ public struct TodoItem: Codable, Identifiable, Equatable, Sendable {
         try container.encode(version, forKey: .version)
         try container.encode(title, forKey: .title)
         try container.encode(collection, forKey: .collection)
-        if !assignees.isEmpty {
-            try container.encode(assignees, forKey: .assignees)
-        }
-        if priority != .normal {
-            try container.encode(priority, forKey: .priority)
+        if !notes.isEmpty {
+            try container.encode(notes[0], forKey: .note)
         }
         try container.encode(status, forKey: .status)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
-
-    private static func normalizedAssignees(_ assignees: [String]) -> [String] {
-        var seen: Set<String> = []
-        return assignees.compactMap { assignee in
-            let clean = assignee.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !clean.isEmpty, seen.insert(clean).inserted else {
-                return nil
-            }
-
-            return clean
-        }
-    }
 }
 
-public enum TodoPriority: String, Codable, CaseIterable, Sendable {
-    case normal
-    case prioritized
-
-    public var displayName: String {
-        switch self {
-        case .normal:
-            "normal"
-        case .prioritized:
-            "Prioritized"
-        }
-    }
-}
-
-public enum TodoStatus: String, Codable, CaseIterable, Sendable {
+public enum TaskStatus: String, Codable, CaseIterable, Sendable {
     case draft
     case ready = "ready"
     case inProgress = "in-progress"
     case completed
     case onHold = "on-hold"
+    case rejected
     case aborted
 
     public var displayName: String {
@@ -156,6 +139,8 @@ public enum TodoStatus: String, Codable, CaseIterable, Sendable {
             "On Hold"
         case .aborted:
             "Aborted"
+        case .rejected:
+            "Rejected"
         }
     }
 
@@ -164,7 +149,7 @@ public enum TodoStatus: String, Codable, CaseIterable, Sendable {
     }
 }
 
-public enum TodoCollectionColor: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum TaskCollectionColor: String, Codable, CaseIterable, Identifiable, Sendable {
     case gray
     case red
     case orange
@@ -195,23 +180,25 @@ public enum TodoCollectionColor: String, Codable, CaseIterable, Identifiable, Se
     }
 }
 
-public struct TodoCollectionSummary: Identifiable, Equatable, Sendable {
+public struct TaskCollectionSummary: Identifiable, Equatable, Sendable {
     public var id: String { name }
 
     public let name: String
     public let totalCount: Int
     public let incompleteCount: Int
-    public let statusIndicator: TodoStatus?
-    public let color: TodoCollectionColor
+    public let statusIndicator: TaskStatus?
+    public let color: TaskCollectionColor
     public let isArchived: Bool
+    public let promptTemplate: String?
 
     public init(
         name: String,
         totalCount: Int,
         incompleteCount: Int,
-        statusIndicator: TodoStatus? = nil,
-        color: TodoCollectionColor = .gray,
-        isArchived: Bool = false
+        statusIndicator: TaskStatus? = nil,
+        color: TaskCollectionColor = .gray,
+        isArchived: Bool = false,
+        promptTemplate: String? = nil
     ) {
         self.name = name
         self.totalCount = totalCount
@@ -219,5 +206,6 @@ public struct TodoCollectionSummary: Identifiable, Equatable, Sendable {
         self.statusIndicator = statusIndicator
         self.color = color
         self.isArchived = isArchived
+        self.promptTemplate = promptTemplate
     }
 }

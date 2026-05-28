@@ -13,7 +13,7 @@ final class SelectedCollectionPersistence: ObservableObject {
 
     init(defaults: UserDefaults = .standard, notificationCenter: NotificationCenter = .default) {
         self.defaults = defaults
-        initialSelectedCollection = defaults.string(forKey: Self.key) ?? TodoAppModel.allCollectionID
+        initialSelectedCollection = defaults.string(forKey: Self.key) ?? TaskAppModel.allCollectionID
 
         terminationObserver = notificationCenter.addObserver(
             forName: NSApplication.willTerminateNotification,
@@ -26,7 +26,7 @@ final class SelectedCollectionPersistence: ObservableObject {
         }
     }
 
-    func register(window: NSWindow, model: TodoAppModel) {
+    func register(window: NSWindow, model: TaskAppModel) {
         selectionsByWindow[ObjectIdentifier(window)] = { [weak model] in
             model?.selectedCollection
         }
@@ -56,7 +56,7 @@ final class SelectedCollectionPersistence: ObservableObject {
 }
 
 struct SelectedCollectionWindowRegistration: NSViewRepresentable {
-    let model: TodoAppModel
+    let model: TaskAppModel
     let persistence: SelectedCollectionPersistence
 
     func makeCoordinator() -> Coordinator {
@@ -82,12 +82,12 @@ struct SelectedCollectionWindowRegistration: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         weak var view: NSView?
-        weak var model: TodoAppModel?
+        weak var model: TaskAppModel?
 
         private let persistence: SelectedCollectionPersistence
         private weak var registeredWindow: NSWindow?
 
-        init(persistence: SelectedCollectionPersistence, model: TodoAppModel) {
+        init(persistence: SelectedCollectionPersistence, model: TaskAppModel) {
             self.persistence = persistence
             self.model = model
         }

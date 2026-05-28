@@ -28,9 +28,11 @@ To create a bundle with explicit release metadata:
 
 ```sh
 taskpond item create [-c|--collection <collection>] <title...>
-taskpond item get [-s|--status <status>] [--priority <priority>] [-c|--collection <collection> | <id...>]
-taskpond item update <id> [-c|--collection <collection>] [-s|--status <status>] [--priority <priority>] [<title...>]
-taskpond item assign <id> (--assignee <assignee> ... | --unassign)
+taskpond item get [-s|--status <status>] [-c|--collection <collection> | <id...>]
+taskpond item update <id> [-c|--collection <collection>] [-s|--status <status>] [<title...>]
+taskpond item note add <id> --body <body>
+taskpond item note update <id> --body <body>
+taskpond item note delete <id>
 taskpond item delete <-c|--collection <collection> | <id...>>
 taskpond collection list
 taskpond collection create <name>
@@ -41,10 +43,8 @@ taskpond collection clear <name> [--completed]
 ```
 
 `taskpond item update --status` requires one status: `ready`, `draft`, `in-progress`, `completed`, `on-hold`, or `aborted`.
-`taskpond item update --priority` requires one priority: `normal` or `prioritized`.
 `taskpond item update` changes an existing item in place without changing its id.
-`taskpond item assign` replaces the assignees for an item, and `--unassign` clears them.
-Successful non-help CLI commands write JSON to standard output. Item output includes `id`, `status`, `collection`, `title`, `priority`, and `assignees`.
+Successful non-help CLI commands write JSON to standard output. Item output includes `id`, `status`, `collection`, and `title`.
 
 Examples:
 
@@ -52,12 +52,7 @@ Examples:
 taskpond item create --collection Inbox "Buy milk"
 taskpond item get
 taskpond item get -s ready -c Inbox
-taskpond item get --priority prioritized -c Inbox
-taskpond item update 1a2b3c4d --collection Errands -s ready --priority prioritized "Buy oat milk"
-taskpond item assign 1a2b3c4d --assignee Kai --assignee Mina
-taskpond item assign 1a2b3c4d --unassign
-taskpond item update 1a2b3c4d --priority prioritized
-taskpond item update 1a2b3c4d --priority normal
+taskpond item update 1a2b3c4d --collection Errands -s ready "Buy oat milk"
 taskpond item update 1a2b3c4d --status completed
 taskpond item update 1a2b3c4d --status draft
 taskpond item update 1a2b3c4d --status in-progress

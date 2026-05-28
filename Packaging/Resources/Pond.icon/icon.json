@@ -24,12 +24,24 @@
         "opacity" : 1
       },
       "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
-      }
+      "translucency-specializations" : [
+        {
+          "value" : {
+            "enabled" : true,
+            "value" : 0.5
+          }
+        },
+        {
+          "appearance" : "dark",
+          "value" : {
+            "enabled" : true,
+            "value" : 0.7
+          }
+        }
+      ]
     },
     {
+      "hidden" : false,
       "layers" : [
         {
           "glass" : true,
@@ -52,6 +64,15 @@
         "kind" : "neutral",
         "opacity" : 1
       },
+      "specular-specializations" : [
+        {
+          "value" : true
+        },
+        {
+          "appearance" : "dark",
+          "value" : true
+        }
+      ],
       "translucency" : {
         "enabled" : false,
         "value" : 0.5
@@ -67,6 +88,10 @@
             },
             {
               "appearance" : "dark",
+              "value" : "dark_1.png"
+            },
+            {
+              "appearance" : "tinted",
               "value" : "dark_1.png"
             }
           ],

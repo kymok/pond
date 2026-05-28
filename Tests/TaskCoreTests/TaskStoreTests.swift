@@ -1,7 +1,7 @@
 import XCTest
-@testable import TodoCore
+@testable import TaskCore
 
-final class TodoStoreTests: XCTestCase {
+final class TaskStoreTests: XCTestCase {
     func testAddDefaultsFilterAndSetStatusByIDPrefix() throws {
         let store = makeStore()
         let first = try store.add(title: "Write app", collection: "Inbox")
@@ -50,40 +50,12 @@ final class TodoStoreTests: XCTestCase {
         let store = makeStore()
         let item = try store.add(title: "One", collection: "Inbox")
 
-        for status in TodoStatus.allCases {
+        for status in TaskStatus.allCases {
             let changed = try store.setStatus(status, ids: [String(item.id.prefix(4))])
 
             XCTAssertEqual(changed.map(\.id), [item.id])
             XCTAssertEqual(changed.map(\.status), [status])
         }
-    }
-
-    func testSetPriorityCanUseEveryPriority() throws {
-        let store = makeStore()
-        let item = try store.add(title: "One", collection: "Inbox")
-
-        for priority in TodoPriority.allCases {
-            let changed = try store.setPriority(priority, ids: [String(item.id.prefix(4))])
-
-            XCTAssertEqual(changed.map(\.id), [item.id])
-            XCTAssertEqual(changed.map(\.priority), [priority])
-        }
-    }
-
-    func testPriorityDefaultsToNormalAndPersistsPrioritized() throws {
-        let store = makeStore()
-        let item = try store.add(title: "One", collection: "Inbox")
-
-        XCTAssertEqual(item.priority, .normal)
-        XCTAssertEqual(try store.items().map(\.priority), [.normal])
-
-        let prioritized = try store.setPriority(.prioritized, ids: [item.id])
-
-        XCTAssertEqual(prioritized.map(\.priority), [.prioritized])
-        XCTAssertEqual(try store.items(priority: .prioritized).map(\.id), [item.id])
-
-        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
-        XCTAssertTrue(json.contains(#""priority" : "prioritized""#))
     }
 
     func testDraftStatusIsPersistedAndIncomplete() throws {
@@ -93,7 +65,7 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(try store.items(status: .draft).map(\.id), [item.id])
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Inbox", totalCount: 1, incompleteCount: 1)]
+            [TaskCollectionSummary(name: "Inbox", totalCount: 1, incompleteCount: 1)]
         )
 
         let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
@@ -101,7 +73,21 @@ final class TodoStoreTests: XCTestCase {
     }
 
     func testReadyDisplayNameIsReady() {
-        XCTAssertEqual(TodoStatus.ready.displayName, "Ready")
+        XCTAssertEqual(TaskStatus.ready.displayName, "Ready")
+    }
+
+    func testPromptTemplateReplacesKnownVariablesAndPreservesUnknownVariables() {
+        let template = TaskPromptTemplate("Run {{cliCommand}} for {{ collectionName }} and keep {{unknown}}.")
+
+        XCTAssertEqual(
+            template.evaluated(
+                variables: [
+                    "cliCommand": "taskpond item get --collection Inbox",
+                    "collectionName": "Inbox"
+                ]
+            ),
+            "Run taskpond item get --collection Inbox for Inbox and keep {{unknown}}."
+        )
     }
 
     func testAddedItemsHaveRandomAlphanumericVersions() throws {
@@ -113,7 +99,8 @@ final class TodoStoreTests: XCTestCase {
     }
 
     func testStatusOrderPutsDraftBeforeReady() {
-        XCTAssertEqual(Array(TodoStatus.allCases.prefix(2)), [.draft, .ready])
+        XCTAssertEqual(Array(TaskStatus.allCases.prefix(2)), [.draft, .ready])
+        XCTAssertEqual(Array(TaskStatus.allCases.suffix(3)), [.onHold, .rejected, .aborted])
     }
 
     func testUpdateTitleReturnsItemToDraft() throws {
@@ -138,8 +125,7 @@ final class TodoStoreTests: XCTestCase {
             id: item.id,
             title: "Two",
             collection: "Work",
-            status: .onHold,
-            priority: .prioritized
+            status: .onHold
         )
 
         XCTAssertEqual(updated.id, item.id)
@@ -147,7 +133,6 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(updated.title, "Two")
         XCTAssertEqual(updated.collection, "Work")
         XCTAssertEqual(updated.status, .onHold)
-        XCTAssertEqual(updated.priority, .prioritized)
 
         let persisted = try XCTUnwrap(try store.items(ids: [item.id]).first)
         XCTAssertEqual(persisted.id, item.id)
@@ -155,7 +140,6 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(persisted.title, "Two")
         XCTAssertEqual(persisted.collection, "Work")
         XCTAssertEqual(persisted.status, .onHold)
-        XCTAssertEqual(persisted.priority, .prioritized)
     }
 
     func testUpdatePreservesVersionWhenFieldsAlreadyMatch() throws {
@@ -166,38 +150,16 @@ final class TodoStoreTests: XCTestCase {
             id: item.id,
             title: "Two",
             collection: "Work",
-            status: .ready,
-            priority: .prioritized
+            status: .ready
         )
         let repeated = try store.update(
             id: item.id,
             title: "Two",
             collection: "Work",
-            status: .ready,
-            priority: .prioritized
+            status: .ready
         )
 
         XCTAssertEqual(repeated.version, updated.version)
-    }
-
-    func testAssignCanSetMultipleAndClearAssignees() throws {
-        let store = makeStore()
-        let item = try store.add(title: "One", collection: "Inbox")
-
-        let assigned = try store.assign(id: item.id, assignees: ["  Kai  ", "Mina", "Kai", ""])
-
-        XCTAssertEqual(assigned.assignees, ["Kai", "Mina"])
-        XCTAssertNotEqual(assigned.version, item.version)
-        XCTAssertEqual(try store.items(ids: [item.id]).map(\.assignees), [["Kai", "Mina"]])
-
-        let unchanged = try store.assign(id: item.id, assignees: ["Kai", "Mina"])
-        XCTAssertEqual(unchanged.version, assigned.version)
-
-        let cleared = try store.assign(id: item.id, assignees: [])
-
-        XCTAssertEqual(cleared.assignees, [])
-        XCTAssertNotEqual(cleared.version, assigned.version)
-        XCTAssertEqual(try store.items(ids: [item.id]).map(\.assignees), [[]])
     }
 
     func testUpdateTitleCanPreserveStatus() throws {
@@ -287,7 +249,7 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0)]
+            [TaskCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0)]
         )
     }
 
@@ -300,10 +262,10 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(updated.color, .blue)
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, color: .blue)]
+            [TaskCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, color: .blue)]
         )
 
-        let reloadedStore = TodoStore(fileURL: store.fileURL)
+        let reloadedStore = TaskStore(fileURL: store.fileURL)
         XCTAssertEqual(try reloadedStore.collectionSummaries().map(\.color), [.blue])
     }
 
@@ -316,7 +278,7 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, color: .green)]
+            [TaskCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, color: .green)]
         )
     }
 
@@ -329,10 +291,10 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertTrue(archived.isArchived)
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0, isArchived: true)]
+            [TaskCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0, isArchived: true)]
         )
 
-        let reloadedStore = TodoStore(fileURL: store.fileURL)
+        let reloadedStore = TaskStore(fileURL: store.fileURL)
         XCTAssertEqual(try reloadedStore.collectionSummaries().map(\.isArchived), [true])
 
         let unarchived = try reloadedStore.setCollectionArchived(name: "Inbox", isArchived: false)
@@ -349,14 +311,116 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, isArchived: true)]
+            [TaskCollectionSummary(name: "Personal", totalCount: 0, incompleteCount: 0, isArchived: true)]
         )
+    }
+
+    func testCollectionPromptIsPersisted() throws {
+        let store = makeStore()
+        try store.createCollection(name: "Inbox")
+
+        let updated = try store.setCollectionPrompt(
+            name: "Inbox",
+            promptTemplate: "Run {{cliCommand}} for {{collectionName}}."
+        )
+
+        XCTAssertEqual(updated.promptTemplate, "Run {{cliCommand}} for {{collectionName}}.")
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [
+                TaskCollectionSummary(
+                    name: "Inbox",
+                    totalCount: 0,
+                    incompleteCount: 0,
+                    promptTemplate: "Run {{cliCommand}} for {{collectionName}}."
+                )
+            ]
+        )
+
+        let reloadedStore = TaskStore(fileURL: store.fileURL)
+        XCTAssertEqual(
+            try reloadedStore.collectionSummaries().map(\.promptTemplate),
+            ["Run {{cliCommand}} for {{collectionName}}."]
+        )
+
+        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertTrue(json.contains(#""collectionPrompts""#))
+        XCTAssertTrue(json.contains(#""Inbox" : "Run {{cliCommand}} for {{collectionName}}.""#))
+    }
+
+    func testBlankCollectionPromptRemovesOverride() throws {
+        let store = makeStore()
+        try store.createCollection(name: "Inbox")
+        try store.setCollectionPrompt(name: "Inbox", promptTemplate: "Custom")
+
+        let updated = try store.setCollectionPrompt(name: "Inbox", promptTemplate: " \n ")
+
+        XCTAssertNil(updated.promptTemplate)
+        XCTAssertEqual(try store.collectionSummaries().map(\.promptTemplate), [nil])
+
+        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertFalse(json.contains("Custom"))
+    }
+
+    func testRenameCollectionCarriesPromptUnlessTargetHasPrompt() throws {
+        let store = makeStore()
+        try store.createCollection(name: "Inbox")
+        try store.setCollectionPrompt(name: "Inbox", promptTemplate: "Inbox Prompt")
+
+        try store.renameCollection(from: "Inbox", to: "Personal")
+
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [
+                TaskCollectionSummary(
+                    name: "Personal",
+                    totalCount: 0,
+                    incompleteCount: 0,
+                    promptTemplate: "Inbox Prompt"
+                )
+            ]
+        )
+
+        try store.createCollection(name: "Work")
+        try store.setCollectionPrompt(name: "Work", promptTemplate: "Work Prompt")
+        try store.renameCollection(from: "Personal", to: "Work")
+
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [
+                TaskCollectionSummary(
+                    name: "Work",
+                    totalCount: 0,
+                    incompleteCount: 0,
+                    promptTemplate: "Work Prompt"
+                )
+            ]
+        )
+    }
+
+    func testDeletingCollectionsRemovesPromptMetadata() throws {
+        let store = makeStore()
+        try store.createCollection(name: "Empty")
+        try store.setCollectionPrompt(name: "Empty", promptTemplate: "Empty Prompt")
+
+        XCTAssertTrue(try store.deleteEmptyCollection(name: "Empty"))
+
+        var json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertFalse(json.contains("Empty Prompt"))
+
+        _ = try store.add(title: "One", collection: "Work")
+        try store.setCollectionPrompt(name: "Work", promptTemplate: "Work Prompt")
+
+        XCTAssertTrue(try store.deleteCollection(name: "Work"))
+
+        json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertFalse(json.contains("Work Prompt"))
     }
 
     func testLegacyStoreBuildsCollectionsFromItems() throws {
         let store = makeStore()
         let date = Date(timeIntervalSince1970: 0)
-        let completedLocked = LegacyTodoItem(
+        let completedLocked = LegacyTaskItem(
             id: "feedbeef",
             title: "Done locked",
             collection: "Legacy",
@@ -365,7 +429,7 @@ final class TodoStoreTests: XCTestCase {
             createdAt: date,
             updatedAt: date
         )
-        let locked = LegacyTodoItem(
+        let locked = LegacyTaskItem(
             id: "cafebabe",
             title: "Locked",
             collection: "Legacy",
@@ -374,7 +438,7 @@ final class TodoStoreTests: XCTestCase {
             createdAt: date,
             updatedAt: date
         )
-        let ready = LegacyTodoItem(
+        let ready = LegacyTaskItem(
             id: "deadbeef",
             title: "Ready",
             collection: "Legacy",
@@ -388,7 +452,7 @@ final class TodoStoreTests: XCTestCase {
 
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Legacy", totalCount: 3, incompleteCount: 2)]
+            [TaskCollectionSummary(name: "Legacy", totalCount: 3, incompleteCount: 2)]
         )
         XCTAssertEqual(try store.collectionSummaries().map(\.color), [.gray])
 
@@ -396,10 +460,8 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(statuses["feedbeef"], .completed)
         XCTAssertEqual(statuses["cafebabe"], .inProgress)
         XCTAssertEqual(statuses["deadbeef"], .ready)
-        XCTAssertEqual(Set(try store.items().map(\.priority)), [.normal])
-
         let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
-        XCTAssertTrue(json.contains(#""version" : 5"#))
+        XCTAssertTrue(json.contains(#""version" : 6"#))
         XCTAssertGreaterThan(json.components(separatedBy: #""version""#).count, 4)
     }
 
@@ -421,12 +483,12 @@ final class TodoStoreTests: XCTestCase {
     func testCollectionSummariesPutDefaultCollectionFirst() throws {
         let store = makeStore()
         try store.createCollection(name: "Zoo")
-        try store.createCollection(name: TodoStore.defaultCollection)
+        try store.createCollection(name: TaskStore.defaultCollection)
         try store.createCollection(name: "Archive")
 
         XCTAssertEqual(
             try store.collectionSummaries().map(\.name),
-            [TodoStore.defaultCollection, "Archive", "Zoo"]
+            [TaskStore.defaultCollection, "Archive", "Zoo"]
         )
     }
 
@@ -448,7 +510,7 @@ final class TodoStoreTests: XCTestCase {
         try store.setStatus(.onHold, ids: [item.id])
 
         let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
-        XCTAssertTrue(json.contains(#""version" : 5"#))
+        XCTAssertTrue(json.contains(#""version" : 6"#))
         XCTAssertTrue(json.contains(#""collectionColors""#))
         XCTAssertTrue(json.contains(#""status" : "on-hold""#))
         XCTAssertFalse(json.contains("isDone"))
@@ -465,7 +527,7 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(current.collection, "Database")
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Database", totalCount: 1, incompleteCount: 1)]
+            [TaskCollectionSummary(name: "Database", totalCount: 1, incompleteCount: 1)]
         )
     }
 
@@ -479,7 +541,7 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(Set(try store.items().map(\.collection)), ["Work"])
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TodoCollectionSummary(name: "Work", totalCount: 2, incompleteCount: 2)]
+            [TaskCollectionSummary(name: "Work", totalCount: 2, incompleteCount: 2)]
         )
     }
 
@@ -498,8 +560,8 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(
             try store.collectionSummaries(),
             [
-                TodoCollectionSummary(name: "Empty", totalCount: 0, incompleteCount: 0),
-                TodoCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
+                TaskCollectionSummary(name: "Empty", totalCount: 0, incompleteCount: 0),
+                TaskCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
             ]
         )
     }
@@ -518,7 +580,7 @@ final class TodoStoreTests: XCTestCase {
         let store = makeStore()
 
         XCTAssertThrowsError(try store.deleteCollection(name: "Missing")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .collectionNotFound("Missing"))
+            XCTAssertEqual(error as? TaskStoreError, .collectionNotFound("Missing"))
         }
     }
 
@@ -527,13 +589,13 @@ final class TodoStoreTests: XCTestCase {
         try store.createCollection(name: "Inbox")
 
         XCTAssertThrowsError(try store.createCollection(name: "   ")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .invalidCollection)
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
         XCTAssertThrowsError(try store.renameCollection(from: "Inbox", to: "\n")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .invalidCollection)
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
         XCTAssertThrowsError(try store.deleteCollection(name: " ")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .invalidCollection)
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
     }
 
@@ -542,7 +604,7 @@ final class TodoStoreTests: XCTestCase {
         let item = try store.add(title: "One")
 
         XCTAssertThrowsError(try store.setStatus(.completed, ids: [item.id], collection: "Inbox")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .targetConflict)
+            XCTAssertEqual(error as? TaskStoreError, .targetConflict)
         }
     }
 
@@ -551,11 +613,11 @@ final class TodoStoreTests: XCTestCase {
         _ = try store.add(title: "One", collection: "Inbox")
 
         XCTAssertThrowsError(try store.setStatus(.completed, collection: " ")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .invalidCollection)
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
 
         XCTAssertThrowsError(try store.delete(collection: "")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .invalidCollection)
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
     }
 
@@ -583,8 +645,8 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(
             try store.collectionSummaries(),
             [
-                TodoCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0),
-                TodoCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
+                TaskCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0),
+                TaskCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
             ]
         )
     }
@@ -637,7 +699,7 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(item.id, "feedbeef")
         XCTAssertEqual(try store.items(ids: ["feedbeef"]).map(\.title), ["One"])
         XCTAssertThrowsError(try store.add(title: "Two", collection: "Inbox", id: "feedbeef")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .duplicateID("feedbeef"))
+            XCTAssertEqual(error as? TaskStoreError, .duplicateID("feedbeef"))
         }
     }
 
@@ -645,7 +707,7 @@ final class TodoStoreTests: XCTestCase {
         let store = makeStore()
 
         XCTAssertThrowsError(try store.add(title: " \n\t ")) { error in
-            XCTAssertEqual(error as? TodoStoreError, .invalidTitle)
+            XCTAssertEqual(error as? TaskStoreError, .invalidTitle)
         }
 
         let item = try store.add(title: "", collection: "Inbox", id: "feedbeef", allowEmptyTitle: true)
@@ -682,14 +744,72 @@ final class TodoStoreTests: XCTestCase {
         XCTAssertEqual(current.collection, "Database")
     }
 
-    private func makeStore() -> TodoStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PondTests-\(UUID().uuidString)", isDirectory: true)
-        return TodoStore(fileURL: directory.appendingPathComponent("todos.json"))
+    func testRejectedStatusIsPersistedAndShownAsCollectionIndicator() throws {
+        let store = makeStore()
+        let item = try store.add(title: "One", collection: "Inbox")
+
+        try store.setStatus(.rejected, ids: [item.id])
+
+        XCTAssertEqual(try store.items(status: .rejected).map(\.id), [item.id])
+        XCTAssertEqual(try store.collectionSummaries().first?.statusIndicator, .rejected)
+
+        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertTrue(json.contains(#""status" : "rejected""#))
     }
 
-    private func writeLegacyStore(items: [LegacyTodoItem], to fileURL: URL) throws {
-        let file = LegacyTodoFile(
+    func testNotesCanBeAddedUpdatedDeletedAndPersistVersions() throws {
+        let store = makeStore()
+        let item = try store.add(title: "One", collection: "Inbox")
+
+        let withNote = try store.addNote(
+            id: item.id,
+            body: " Looks good "
+        )
+        let note = try XCTUnwrap(withNote.notes.first)
+
+        XCTAssertEqual(note.body, "Looks good")
+        XCTAssertEqual(note.version.count, 12)
+        XCTAssertNotEqual(withNote.version, item.version)
+
+        let updated = try store.updateNote(
+            id: item.id,
+            noteID: note.id,
+            body: "Updated"
+        )
+        let updatedNote = try XCTUnwrap(updated.notes.first)
+
+        XCTAssertEqual(updatedNote.body, "Updated")
+        XCTAssertNotEqual(updatedNote.version, note.version)
+
+        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertFalse(json.contains(#""author""#))
+        XCTAssertFalse(json.contains(#""title" : "Decision""#))
+        XCTAssertFalse(json.contains(#""notes""#))
+        XCTAssertTrue(json.contains(#""note""#))
+
+        let unchanged = try store.updateNote(
+            id: item.id,
+            noteID: note.id,
+            body: "Updated"
+        )
+
+        XCTAssertEqual(unchanged.notes.first?.version, updatedNote.version)
+
+        let reloadedStore = TaskStore(fileURL: store.fileURL)
+        XCTAssertEqual(try reloadedStore.items(ids: [item.id]).first?.notes.first?.body, "Updated")
+
+        let withoutNote = try reloadedStore.deleteNote(id: item.id)
+        XCTAssertEqual(withoutNote.notes, [])
+    }
+
+    private func makeStore() -> TaskStore {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PondTests-\(UUID().uuidString)", isDirectory: true)
+        return TaskStore(fileURL: directory.appendingPathComponent("tasks.json"))
+    }
+
+    private func writeLegacyStore(items: [LegacyTaskItem], to fileURL: URL) throws {
+        let file = LegacyTaskFile(
             version: 1,
             items: items
         )
@@ -704,12 +824,12 @@ final class TodoStoreTests: XCTestCase {
         try encoder.encode(file).write(to: fileURL)
     }
 
-    private struct LegacyTodoFile: Encodable {
+    private struct LegacyTaskFile: Encodable {
         var version: Int
-        var items: [LegacyTodoItem]
+        var items: [LegacyTaskItem]
     }
 
-    private struct LegacyTodoItem: Encodable {
+    private struct LegacyTaskItem: Encodable {
         var id: String
         var title: String
         var collection: String

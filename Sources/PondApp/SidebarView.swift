@@ -1,9 +1,9 @@
 import SwiftUI
 
-import TodoCore
+import TaskCore
 
 struct SidebarView: View {
-    @EnvironmentObject private var model: TodoAppModel
+    @EnvironmentObject private var model: TaskAppModel
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @FocusState private var focusedCollection: String?
     @State private var editingCollection: String?
@@ -17,7 +17,7 @@ struct SidebarView: View {
                 Section("Collections") {
                     Label("All", systemImage: "tray.full")
                         .badge(model.totalIncompleteCount)
-                        .tag(TodoAppModel.allCollectionID)
+                        .tag(TaskAppModel.allCollectionID)
                         .contextMenu {
                             Button("Bulk Change Status...") {
                                 model.requestBulkStatusChangeForAll()
@@ -73,7 +73,7 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func collectionRow(_ collection: TodoCollectionSummary) -> some View {
+    private func collectionRow(_ collection: TaskCollectionSummary) -> some View {
         if editingCollection == collection.name {
             TextField("Collection", text: $editingName)
                 .textFieldStyle(.plain)
@@ -112,11 +112,11 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func collectionIcon(for collection: TodoCollectionSummary) -> some View {
+    private func collectionIcon(for collection: TaskCollectionSummary) -> some View {
         switch collection.statusIndicator {
-        case .aborted, .onHold:
+        case .aborted, .onHold, .rejected:
             if let status = collection.statusIndicator {
-                TodoStatusIcon(status: status)
+                TaskStatusIcon(status: status)
             }
         default:
             Image(systemName: "folder.fill")

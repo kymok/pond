@@ -1,10 +1,11 @@
 import Foundation
 import SwiftUI
-import TodoCore
+import TaskCore
 
 struct SettingsView: View {
-    @EnvironmentObject private var model: TodoAppModel
+    @EnvironmentObject private var model: TaskAppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var defaultPromptTemplate = TaskPromptSettings.storedDefaultPromptTemplate
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,6 +67,19 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                Section("Default Prompt") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PromptTemplateEditor(
+                            text: $defaultPromptTemplate,
+                            height: 180
+                        )
+
+                        Button("Reset to Default") {
+                            defaultPromptTemplate = TaskPromptTemplate.applicationDefaultTemplate.rawValue
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
 
@@ -84,6 +98,10 @@ struct SettingsView: View {
         .frame(width: 560)
         .onAppear {
             model.refreshCLIStatus()
+            defaultPromptTemplate = TaskPromptSettings.storedDefaultPromptTemplate
+        }
+        .onChange(of: defaultPromptTemplate) { _, promptTemplate in
+            TaskPromptSettings.setDefaultPromptTemplate(promptTemplate)
         }
     }
 
