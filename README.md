@@ -1,3 +1,5 @@
+![Pond screenshot](docs/screenshot.png)
+
 # Pond
 
 A small macOS task app with a shared command line interface.
@@ -82,6 +84,7 @@ taskpond collection clear <name> [--completed]
 `taskpond item update --priority` requires one priority: `normal` or `prioritized`.
 `taskpond item update` changes an existing item in place without changing its id.
 `taskpond item assign` replaces the assignees for an item, and `--unassign` clears them.
+Successful non-help CLI commands write JSON to standard output. Item output includes `id`, `status`, `collection`, `title`, `priority`, and `assignees`.
 
 Examples:
 

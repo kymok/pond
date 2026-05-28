@@ -86,7 +86,7 @@ struct TodoCommand {
             collection: input.collection ?? TodoStore.defaultCollection
         )
 
-        printItems([item])
+        try printItems([item])
     }
 
     private static func itemGet(_ arguments: [String]) throws {
@@ -99,7 +99,7 @@ struct TodoCommand {
             ids: input.target.ids
         )
 
-        printItems(items)
+        try printItems(items)
     }
 
     private static func itemUpdate(_ arguments: [String]) throws {
@@ -113,7 +113,7 @@ struct TodoCommand {
             priority: input.priority
         )
 
-        printItems([item])
+        try printItems([item])
     }
 
     private static func itemAssign(_ arguments: [String]) throws {
@@ -124,7 +124,7 @@ struct TodoCommand {
             assignees: input.assignees
         )
 
-        printItems([item])
+        try printItems([item])
     }
 
     private static func itemDelete(_ arguments: [String]) throws {
@@ -132,14 +132,14 @@ struct TodoCommand {
         let target = try parser.takeTarget(allowEmpty: false)
         let items = try TodoStore().delete(ids: target.ids, collection: target.collection)
 
-        printItems(items)
+        try printItems(items)
     }
 
     private static func collectionList(_ arguments: [String]) throws {
         var parser = ArgumentScanner(arguments)
         try parser.rejectRemainingArguments()
         let collections = try TodoStore().collectionSummaries()
-        printCollections(collections)
+        try printCollections(collections)
     }
 
     private static func collectionCreate(_ arguments: [String]) throws {
@@ -165,7 +165,7 @@ struct TodoCommand {
         let input = try parser.takeColorInput()
         let collection = try TodoStore().setCollectionColor(name: input.name, color: input.color)
 
-        printCollections([collection])
+        try printCollections([collection])
     }
 
     private static func collectionDelete(_ arguments: [String]) throws {
@@ -175,7 +175,7 @@ struct TodoCommand {
         let collection = try collectionSummary(named: name, in: store)
         _ = try store.deleteCollection(name: name)
 
-        printCollections([collection])
+        try printCollections([collection])
     }
 
     private static func collectionClear(_ arguments: [String]) throws {
@@ -186,31 +186,19 @@ struct TodoCommand {
             completedOnly: input.completedOnly
         )
 
-        printItems(items)
+        try printItems(items)
     }
 
-    private static func printItems(_ items: [TodoItem]) {
-        for item in items {
-            print("\(item.id)\t\(item.status.rawValue)\t\(item.collection.cliEscaped)\t\(item.title.cliEscaped)")
-        }
+    private static func printItems(_ items: [TodoItem]) throws {
+        try printJSON(items.map { ItemOutput(item: $0) })
     }
 
-    private static func printCollections(_ collections: [TodoCollectionSummary]) {
-        for collection in collections {
-            print(
-                [
-                    collection.name.cliEscaped,
-                    String(collection.totalCount),
-                    String(collection.incompleteCount),
-                    collection.color.rawValue,
-                    collection.statusIndicator?.rawValue ?? ""
-                ].joined(separator: "\t")
-            )
-        }
+    private static func printCollections(_ collections: [TodoCollectionSummary]) throws {
+        try printJSON(collections.map { CollectionOutput(collection: $0) })
     }
 
     private static func printCollection(named name: String, in store: TodoStore) throws {
-        printCollections([try collectionSummary(named: name, in: store)])
+        try printCollections([try collectionSummary(named: name, in: store)])
     }
 
     private static func collectionSummary(named name: String, in store: TodoStore) throws -> TodoCollectionSummary {
@@ -240,8 +228,53 @@ struct TodoCommand {
         )
     }
 
+    private static func printJSON<T: Encodable>(_ value: T) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(value)
+        guard let output = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        print(output)
+    }
+
     private static func writeError(_ message: String) {
         FileHandle.standardError.write(Data((message + "\n").utf8))
+    }
+}
+
+private struct ItemOutput: Encodable {
+    var id: String
+    var status: String
+    var collection: String
+    var title: String
+    var priority: String
+    var assignees: [String]
+
+    init(item: TodoItem) {
+        id = item.id
+        status = item.status.rawValue
+        collection = item.collection
+        title = item.title
+        priority = item.priority.rawValue
+        assignees = item.assignees
+    }
+}
+
+private struct CollectionOutput: Encodable {
+    var name: String
+    var totalCount: Int
+    var incompleteCount: Int
+    var color: String
+    var statusIndicator: String?
+
+    init(collection: TodoCollectionSummary) {
+        name = collection.name
+        totalCount = collection.totalCount
+        incompleteCount = collection.incompleteCount
+        color = collection.color.rawValue
+        statusIndicator = collection.statusIndicator?.rawValue
     }
 }
 
@@ -621,27 +654,6 @@ private struct ArgumentScanner {
 }
 
 private extension String {
-    var cliEscaped: String {
-        var result = ""
-
-        for character in self {
-            switch character {
-            case "\\":
-                result += "\\\\"
-            case "\n":
-                result += "\\n"
-            case "\r":
-                result += "\\r"
-            case "\t":
-                result += "\\t"
-            default:
-                result.append(character)
-            }
-        }
-
-        return result
-    }
-
     var cliUnescaped: String {
         var result = ""
         var isEscaping = false
