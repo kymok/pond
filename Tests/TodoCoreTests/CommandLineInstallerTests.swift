@@ -4,7 +4,7 @@ import XCTest
 final class CommandLineInstallerTests: XCTestCase {
     func testInstallCanReplaceManagedStaleSymlink() throws {
         let directory = makeDirectory()
-        let linkURL = directory.appendingPathComponent("todo")
+        let linkURL = directory.appendingPathComponent("taskpond")
         let recordURL = directory.appendingPathComponent("cli-install.json")
         let oldTargetURL = try makeExecutable(named: "old-todo", in: directory)
         let newTargetURL = try makeExecutable(named: "new-todo", in: directory)
@@ -38,7 +38,7 @@ final class CommandLineInstallerTests: XCTestCase {
 
     func testUnmanagedSymlinkIsStillTreatedAsConflict() throws {
         let directory = makeDirectory()
-        let linkURL = directory.appendingPathComponent("todo")
+        let linkURL = directory.appendingPathComponent("taskpond")
         let targetURL = try makeExecutable(named: "target-todo", in: directory)
         let otherURL = try makeExecutable(named: "other-todo", in: directory)
         try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: otherURL)
@@ -57,7 +57,7 @@ final class CommandLineInstallerTests: XCTestCase {
 
     private func makeDirectory() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("SmolTodoInstallerTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("PondInstallerTests-\(UUID().uuidString)", isDirectory: true)
     }
 
     private func makeExecutable(named name: String, in directory: URL) throws -> URL {

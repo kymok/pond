@@ -675,7 +675,7 @@ private struct TodoListDropDelegate: DropDelegate {
 }
 
 private enum TodoItemDrag {
-    static let type = UTType(exportedAs: "app.smol-todo.todo-item")
+    static let type = UTType(exportedAs: "dev.kymok.pond.todo-item")
     static let acceptedTypes = [type]
 
     static func itemProvider(id: String) -> NSItemProvider {

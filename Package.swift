@@ -3,19 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "SmolTodo",
+    name: "Pond",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .library(name: "TodoCore", targets: ["TodoCore"]),
-        .executable(name: "SmolTodo", targets: ["SmolTodoApp"]),
-        .executable(name: "todo", targets: ["TodoCLI"])
+        .executable(name: "Pond", targets: ["PondApp"]),
+        .executable(name: "taskpond", targets: ["TodoCLI"])
     ],
     targets: [
         .target(name: "TodoCore"),
         .executableTarget(
-            name: "SmolTodoApp",
+            name: "PondApp",
             dependencies: ["TodoCore"]
         ),
         .executableTarget(

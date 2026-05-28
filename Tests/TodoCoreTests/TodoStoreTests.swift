@@ -651,7 +651,7 @@ final class TodoStoreTests: XCTestCase {
 
     private func makeStore() -> TodoStore {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SmolTodoTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("PondTests-\(UUID().uuidString)", isDirectory: true)
         return TodoStore(fileURL: directory.appendingPathComponent("todos.json"))
     }
 

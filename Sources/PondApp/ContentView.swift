@@ -21,6 +21,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 480, minHeight: 320)
         .background(WindowLevelController(alwaysOnTop: alwaysOnTop))
+        .background(WindowStateController())
         .background(
             LocalKeyDownHandler(isActive: model.collectionDeletionRequest != nil) { event in
                 confirmDeleteDialogOnDefaultKey(event)

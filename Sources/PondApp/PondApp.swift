@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct SmolTodoApp: App {
+struct PondApp: App {
     @StateObject private var selectedCollectionPersistence = SelectedCollectionPersistence()
     @StateObject private var settingsModel = TodoAppModel()
 

@@ -24,7 +24,7 @@ public enum CommandLineInstallerError: LocalizedError, Equatable {
         case .missingExecutable(let url):
             "CLI executable was not found at \(url.path)."
         case .conflictingFile(let url):
-            "\(url.path) already exists and is not a symlink created by Smol Todo."
+            "\(url.path) already exists and is not a symlink created by Pond."
         case .conflictingSymlink(let link, let destination):
             "\(link.path) already points to \(destination.path)."
         }
@@ -48,21 +48,21 @@ public final class CommandLineInstaller: @unchecked Sendable {
 
     public static func defaultLinkURL() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/bin/todo", isDirectory: false)
+            .appendingPathComponent(".local/bin/taskpond", isDirectory: false)
     }
 
     public static func inferTargetURL() -> URL {
         let bundleURL = Bundle.main.bundleURL
         if bundleURL.pathExtension == "app" {
             return bundleURL
-                .appendingPathComponent("Contents/Library/Helpers/todo", isDirectory: false)
+                .appendingPathComponent("Contents/Library/Helpers/taskpond", isDirectory: false)
                 .standardizedFileURL
         }
 
         if let executableURL = Bundle.main.executableURL {
             let sibling = executableURL
                 .deletingLastPathComponent()
-                .appendingPathComponent("todo", isDirectory: false)
+                .appendingPathComponent("taskpond", isDirectory: false)
                 .standardizedFileURL
 
             if FileManager.default.fileExists(atPath: sibling.path) {
@@ -71,7 +71,7 @@ public final class CommandLineInstaller: @unchecked Sendable {
         }
 
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/debug/todo", isDirectory: false)
+            .appendingPathComponent(".build/debug/taskpond", isDirectory: false)
             .standardizedFileURL
     }
 

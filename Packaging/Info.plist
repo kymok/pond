@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>SmolTodo</string>
+	<string>Pond</string>
 	<key>CFBundleIconFile</key>
-	<string>SmolTodo</string>
+	<string>Pond</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.smol.todo</string>
+	<string>dev.kymok.pond</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Smol Todo</string>
+	<string>Pond</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

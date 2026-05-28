@@ -690,7 +690,7 @@ struct CollectionActionMenuItems: View {
     }
 
     private var cliCommand: String {
-        "todo item get --collection \(collection.name.shellEscaped)"
+        "taskpond item get --collection \(collection.name.shellEscaped)"
     }
 
     private var canBulkChangeStatuses: Bool {
@@ -715,7 +715,7 @@ struct CollectionActionMenuItems: View {
 private final class StoreChangeMonitor: @unchecked Sendable {
     private let directoryURL: URL
     private let onChange: @Sendable () -> Void
-    private let queue = DispatchQueue(label: "SmolTodo.store-change-monitor")
+    private let queue = DispatchQueue(label: "Pond.store-change-monitor")
     private var source: DispatchSourceFileSystemObject?
     private var pendingChange: DispatchWorkItem?
 

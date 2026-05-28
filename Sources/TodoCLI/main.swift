@@ -225,17 +225,17 @@ struct TodoCommand {
     private static func printUsage() {
         print(
             """
-            todo item create [-c|--collection <collection>] <title...>
-            todo item get [-s|--status <status>] [--priority <priority>] [-c|--collection <collection> | <id...>]
-            todo item update <id> [-c|--collection <collection>] [-s|--status <status>] [--priority <priority>] [<title...>]
-            todo item assign <id> (--assignee <assignee> ... | --unassign)
-            todo item delete <-c|--collection <collection> | <id...>>
-            todo collection list
-            todo collection create <name>
-            todo collection rename <old-name> <new-name>
-            todo collection color <name> <gray|red|orange|yellow|green|blue|purple>
-            todo collection delete <name>
-            todo collection clear <name> [--completed]
+            taskpond item create [-c|--collection <collection>] <title...>
+            taskpond item get [-s|--status <status>] [--priority <priority>] [-c|--collection <collection> | <id...>]
+            taskpond item update <id> [-c|--collection <collection>] [-s|--status <status>] [--priority <priority>] [<title...>]
+            taskpond item assign <id> (--assignee <assignee> ... | --unassign)
+            taskpond item delete <-c|--collection <collection> | <id...>>
+            taskpond collection list
+            taskpond collection create <name>
+            taskpond collection rename <old-name> <new-name>
+            taskpond collection color <name> <gray|red|orange|yellow|green|blue|purple>
+            taskpond collection delete <name>
+            taskpond collection clear <name> [--completed]
             """
         )
     }

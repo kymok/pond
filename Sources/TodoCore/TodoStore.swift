@@ -71,7 +71,7 @@ public final class TodoStore: @unchecked Sendable {
     }
 
     public static func defaultStoreURL() -> URL {
-        if let override = ProcessInfo.processInfo.environment["SMOL_TODO_STORE"], !override.isEmpty {
+        if let override = ProcessInfo.processInfo.environment["POND_STORE"], !override.isEmpty {
             return URL(fileURLWithPath: override)
         }
 
@@ -81,7 +81,7 @@ public final class TodoStore: @unchecked Sendable {
 
     public static func appSupportDirectory() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("SmolTodo", isDirectory: true)
+            .appendingPathComponent("Pond", isDirectory: true)
     }
 
     public func items(

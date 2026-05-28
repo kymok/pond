@@ -29,11 +29,6 @@ struct SettingsView: View {
                                 .foregroundStyle(status.installed ? .green : .secondary)
                         }
 
-                        LabeledContent("Shell PATH") {
-                            Text(pathStatusText(status))
-                                .foregroundStyle(status.installDirectoryIsInPath ? .green : .secondary)
-                        }
-
                         if !status.installDirectoryIsInPath {
                             LabeledContent("Add to PATH") {
                                 Text(model.pathHint)
@@ -77,7 +72,7 @@ struct SettingsView: View {
     }
 
     private var buildID: String {
-        Bundle.main.object(forInfoDictionaryKey: "SmolTodoBuildID") as? String ?? "Unavailable"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unavailable"
     }
 
     private func statusText(_ status: CLIInstallStatus) -> String {
@@ -92,7 +87,4 @@ struct SettingsView: View {
         return "Not installed"
     }
 
-    private func pathStatusText(_ status: CLIInstallStatus) -> String {
-        status.installDirectoryIsInPath ? "Configured" : "\(status.linkURL.deletingLastPathComponent().path) is not in PATH"
-    }
 }

@@ -298,7 +298,7 @@ func clearCurrentTextFieldSelection() {
 }
 
 func todoExamplePrompt(cliCommand: String) -> String {
-    "Run `\(cliCommand)` and complete the listed tasks. Use `todo item update [task id] --status [status]` to update task status. Skip `Draft` tasks. Mark unclear, unnatural, or clearly unrelated tasks as `on-hold`. Mark tasks as `in-progress` when started and `aborted` if they cannot be completed. Group related work into appropriate commits. Use sub-agents with separate worktrees when parallelization helps, then merge their branches into the current branch. Before finishing, run `\(cliCommand)` again because the user may add more tasks, and ensure no uncommitted changes remain."
+    "Run `\(cliCommand)` and complete the listed tasks. Use `taskpond item update [task id] --status [status]` to update task status. Skip `Draft` tasks. Mark unclear, unnatural, or clearly unrelated tasks as `on-hold`. Mark tasks as `in-progress` when started and `aborted` if they cannot be completed. Group related work into appropriate commits. Use sub-agents with separate worktrees when parallelization helps, then merge their branches into the current branch. Before finishing, run `\(cliCommand)` again because the user may add more tasks, and ensure no uncommitted changes remain."
 }
 
 @MainActor
