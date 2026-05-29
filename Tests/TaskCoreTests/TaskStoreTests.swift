@@ -575,6 +575,160 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(try store.items(ids: [item.id]).map(\.collection), ["Projects/Work"])
     }
 
+    func testReorderingCollectionInSameGroupPersistsOrder() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Alpha", group: "Projects")
+        try store.createCollection(name: "Beta", group: "Projects")
+        try store.createCollection(name: "Gamma", group: "Projects")
+
+        try store.reorderCollection(
+            name: "Projects/Alpha",
+            toGroup: "Projects",
+            after: "Projects/Gamma",
+            before: nil
+        )
+
+        let reloadedStore = TaskStore(fileURL: store.fileURL)
+        XCTAssertEqual(
+            try reloadedStore.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(name: TaskStore.defaultCollectionGroup),
+                TaskCollectionGroupSummary(
+                    name: "Projects",
+                    collections: [
+                        TaskCollectionSummary(
+                            name: "Projects/Beta",
+                            displayName: "Beta",
+                            groupName: "Projects",
+                            totalCount: 0,
+                            incompleteCount: 0
+                        ),
+                        TaskCollectionSummary(
+                            name: "Projects/Gamma",
+                            displayName: "Gamma",
+                            groupName: "Projects",
+                            totalCount: 0,
+                            incompleteCount: 0
+                        ),
+                        TaskCollectionSummary(
+                            name: "Projects/Alpha",
+                            displayName: "Alpha",
+                            groupName: "Projects",
+                            totalCount: 0,
+                            incompleteCount: 0
+                        )
+                    ]
+                )
+            ]
+        )
+    }
+
+    func testReorderingCollectionAcrossGroupsPreservesMetadata() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollectionGroup(name: "Personal")
+        let item = try store.add(title: "One", collection: "Projects/Work")
+        try store.createCollection(name: "Chores", group: "Personal")
+        try store.setCollectionColor(name: "Projects/Work", color: .blue)
+        try store.setCollectionPrompt(name: "Projects/Work", promptTemplate: "Prompt")
+        try store.setCollectionArchived(name: "Projects/Work", isArchived: true)
+
+        let moved = try store.reorderCollection(
+            name: "Projects/Work",
+            toGroup: "Personal",
+            after: nil,
+            before: "Personal/Chores"
+        )
+
+        XCTAssertEqual(moved.name, "Personal/Work")
+        XCTAssertEqual(moved.displayName, "Work")
+        XCTAssertEqual(moved.groupName, "Personal")
+        XCTAssertEqual(moved.color, .blue)
+        XCTAssertEqual(moved.promptTemplate, "Prompt")
+        XCTAssertTrue(moved.isArchived)
+        XCTAssertEqual(try store.items(ids: [item.id]).map(\.collection), ["Personal/Work"])
+        XCTAssertEqual(
+            try TaskStore(fileURL: store.fileURL).collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(name: TaskStore.defaultCollectionGroup),
+                TaskCollectionGroupSummary(name: "Projects"),
+                TaskCollectionGroupSummary(
+                    name: "Personal",
+                    collections: [
+                        TaskCollectionSummary(
+                            name: "Personal/Work",
+                            displayName: "Work",
+                            groupName: "Personal",
+                            totalCount: 1,
+                            incompleteCount: 1,
+                            color: .blue,
+                            isArchived: true,
+                            promptTemplate: "Prompt"
+                        ),
+                        TaskCollectionSummary(
+                            name: "Personal/Chores",
+                            displayName: "Chores",
+                            groupName: "Personal",
+                            totalCount: 0,
+                            incompleteCount: 0
+                        )
+                    ]
+                )
+            ]
+        )
+    }
+
+    func testReorderingDefaultCollectionIsRejected() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.add(title: "One", collection: "Inbox")
+
+        XCTAssertThrowsError(
+            try store.reorderCollection(
+                name: "Inbox",
+                toGroup: "Projects",
+                after: nil,
+                before: nil
+            )
+        ) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollection)
+        }
+    }
+
+    func testReorderingCollectionGroupsPersistsOrderAndKeepsDefaultFirst() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollectionGroup(name: "Personal")
+        try store.createCollectionGroup(name: "Archive")
+
+        try store.reorderCollectionGroup(name: "Archive", after: "Projects", before: nil)
+
+        XCTAssertEqual(
+            try TaskStore(fileURL: store.fileURL).collectionGroupSummaries().map(\.name),
+            [TaskStore.defaultCollectionGroup, "Projects", "Archive", "Personal"]
+        )
+        XCTAssertThrowsError(
+            try store.reorderCollectionGroup(
+                name: TaskStore.defaultCollectionGroup,
+                after: "Projects",
+                before: nil
+            )
+        ) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollectionGroup)
+        }
+
+        try store.reorderCollectionGroup(name: "Archive", after: nil, before: TaskStore.defaultCollectionGroup)
+        XCTAssertEqual(
+            try store.collectionGroupSummaries().map(\.name),
+            [TaskStore.defaultCollectionGroup, "Archive", "Projects", "Personal"]
+        )
+    }
+
     func testRenameCollectionRejectsDisplayNameConflictInTargetGroup() throws {
         let store = makeStore()
 

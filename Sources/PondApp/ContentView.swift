@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject private var model: TaskAppModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
+    @StateObject private var taskDragState = TaskDragState()
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
@@ -19,9 +20,11 @@ struct ContentView: View {
         } detail: {
             DetailView()
         }
+        .environmentObject(taskDragState)
         .frame(minWidth: 480, minHeight: 320)
         .background(WindowLevelController(alwaysOnTop: alwaysOnTop))
         .background(WindowStateController())
+        .background(TaskDragEndMonitor(dragState: taskDragState))
         .background(LocalKeyDownHandler(isActive: true, onKeyDown: handleGlobalKeyDown))
         .sheet(item: $model.bulkStatusChangeRequest) { request in
             BulkStatusChangeSheet(

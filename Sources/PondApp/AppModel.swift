@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import Dispatch
+import OSLog
 import SwiftUI
 import TaskCore
 import UniformTypeIdentifiers
@@ -25,6 +26,10 @@ struct TaskCollectionPromptEditRequest: Identifiable {
 final class TaskAppModel: ObservableObject {
     static let allCollectionID = "__all__"
     private static let usesAutoDraftKey = "usesAutoDraft"
+    private static let sidebarDragLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "dev.kymok.pond",
+        category: "SidebarDrag"
+    )
 
     @Published var items: [TaskItem] = []
     @Published var collectionSummaries: [TaskCollectionSummary] = []
@@ -342,6 +347,70 @@ final class TaskAppModel: ObservableObject {
             if selectedCollection == collection.name {
                 selectedCollection = movedName
             }
+        }
+    }
+
+    @discardableResult
+    func reorderCollection(
+        name: String,
+        toGroup group: String,
+        after previousName: String?,
+        before nextName: String?
+    ) -> Bool {
+        guard let collection = collectionSummaries.first(where: { $0.name == name }),
+              !isDefaultCollection(collection),
+              !collection.isArchived else {
+            Self.sidebarDragLogger.info("Collection reorder skipped for invalid source '\(name, privacy: .public)'")
+            return false
+        }
+
+        do {
+            let sourceName = try prepareCollectionForReorder(collection, toGroup: group)
+            let moved = try store.reorderCollection(
+                name: sourceName,
+                toGroup: group,
+                after: previousName,
+                before: nextName
+            )
+            if selectedCollection == collection.name {
+                selectedCollection = moved.name
+            }
+            reload()
+            Self.sidebarDragLogger.info(
+                "Collection reorder succeeded source='\(name, privacy: .public)' result='\(moved.name, privacy: .public)' group='\(group, privacy: .public)'"
+            )
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            reload()
+            Self.sidebarDragLogger.error(
+                "Collection reorder failed source='\(name, privacy: .public)' group='\(group, privacy: .public)' error='\(error.localizedDescription, privacy: .public)'"
+            )
+            return false
+        }
+    }
+
+    @discardableResult
+    func reorderCollectionGroup(name: String, after previousName: String?, before nextName: String?) -> Bool {
+        guard name != TaskStore.defaultCollectionGroup else {
+            Self.sidebarDragLogger.info("Group reorder skipped for default group")
+            return false
+        }
+
+        do {
+            _ = try store.reorderCollectionGroup(name: name, after: previousName, before: nextName)
+            reload()
+            Self.sidebarDragLogger.info(
+                "Group reorder succeeded source='\(name, privacy: .public)' after='\(previousName ?? "", privacy: .public)' before='\(nextName ?? "", privacy: .public)'"
+            )
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            reload()
+            Self.sidebarDragLogger.error(
+                "Group reorder failed source='\(name, privacy: .public)' after='\(previousName ?? "", privacy: .public)' before='\(nextName ?? "", privacy: .public)' error='\(error.localizedDescription, privacy: .public)'"
+            )
+            return false
         }
     }
 
@@ -858,6 +927,20 @@ final class TaskAppModel: ObservableObject {
 
     private func uniqueCollectionName(base: String) -> String {
         uniqueCollectionName(base: base, group: TaskStore.defaultCollectionGroup)
+    }
+
+    private func prepareCollectionForReorder(_ collection: TaskCollectionSummary, toGroup group: String) throws -> String {
+        let targetDisplayName = uniqueCollectionName(
+            base: collection.displayName,
+            group: group,
+            excluding: collection.name
+        )
+        let targetName = collectionAPIName(group: group, displayName: targetDisplayName)
+        guard targetName != collection.name else {
+            return collection.name
+        }
+
+        return try store.renameCollection(from: collection.name, to: targetName)
     }
 
     private func uniqueCollectionName(

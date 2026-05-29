@@ -4,6 +4,7 @@ import TaskCore
 
 struct TaskRow: View {
     @EnvironmentObject private var model: TaskAppModel
+    @EnvironmentObject private var taskDragState: TaskDragState
 
     let item: TaskItem
     let isPendingDraft: Bool
@@ -230,6 +231,26 @@ struct TaskRow: View {
                 handleCollectionKeyDown(event, fieldEditor: fieldEditor)
             }
         )
+        .background(
+            TaskDragMetricsProbe(
+                itemID: item.id,
+                context: TaskDragElementContext(
+                    role: .sourceRow,
+                    includesMenuButton: !isPendingDraft,
+                    showsCollection: model.selectedCollectionName == nil,
+                    titleLength: title.count,
+                    status: item.status.displayName,
+                    collection: item.collection
+                ),
+                report: { itemID, context, metrics in
+                    taskDragState.recordElementMetrics(
+                        itemID: itemID,
+                        context: context,
+                        metrics: metrics
+                    )
+                }
+            )
+        )
         .contextMenu {
             Button("Mark Draft") {
                 model.setStatus(item, status: .draft)
@@ -271,7 +292,7 @@ struct TaskRow: View {
     }
 
     private var canEditTitleAndCollection: Bool {
-        item.status != .inProgress && item.status != .completed
+        item.allowsTitleAndCollectionEditing
     }
 
     private var leadingStatusButtonTitle: String {

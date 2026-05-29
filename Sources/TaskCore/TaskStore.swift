@@ -286,6 +286,89 @@ public final class TaskStore: @unchecked Sendable {
     }
 
     @discardableResult
+    public func reorderCollection(
+        name: String,
+        toGroup group: String,
+        after previousName: String?,
+        before nextName: String?
+    ) throws -> TaskCollectionSummary {
+        let cleanName = try normalizedExplicitCollection(name)
+        let cleanGroup = try normalizedExplicitCollectionGroup(group)
+        let cleanPreviousName = try previousName.map(normalizedExplicitCollection)
+        let cleanNextName = try nextName.map(normalizedExplicitCollection)
+
+        guard cleanName != Self.defaultCollection else {
+            throw TaskStoreError.defaultCollection
+        }
+
+        return try withFile(write: true) { file in
+            normalizeCollectionGroups(in: &file)
+            guard collectionExists(cleanName, in: file) else {
+                throw TaskStoreError.collectionNotFound(cleanName)
+            }
+
+            let targetName = collectionAPIName(groupName: cleanGroup, displayName: collectionDisplayName(cleanName))
+            if cleanName != targetName {
+                guard !collectionExists(targetName, in: file) else {
+                    throw TaskStoreError.collectionConflict(targetName)
+                }
+                try renameCollectionReference(from: cleanName, to: targetName, in: &file)
+            }
+
+            try reorderCollectionInFile(
+                targetName,
+                toGroup: cleanGroup,
+                after: cleanPreviousName,
+                before: cleanNextName,
+                in: &file
+            )
+            return collectionSummary(named: targetName, in: file)
+        }
+    }
+
+    @discardableResult
+    public func reorderCollectionGroup(
+        name: String,
+        after previousName: String?,
+        before nextName: String?
+    ) throws -> TaskCollectionGroupSummary {
+        let cleanName = try normalizedExplicitCollectionGroup(name)
+        let cleanPreviousName = try previousName.map(normalizedExplicitCollectionGroup)
+        let cleanNextName = try nextName.map(normalizedExplicitCollectionGroup)
+
+        guard cleanName != Self.defaultCollectionGroup else {
+            throw TaskStoreError.defaultCollectionGroup
+        }
+
+        return try withFile(write: true) { file in
+            normalizeCollectionGroups(in: &file)
+            guard let sourceIndex = file.collectionGroups.firstIndex(where: { $0.name == cleanName }) else {
+                throw TaskStoreError.collectionGroupNotFound(cleanName)
+            }
+
+            let group = file.collectionGroups.remove(at: sourceIndex)
+            let insertionIndex: Int
+            if let cleanPreviousName, cleanPreviousName != cleanName {
+                guard let previousIndex = file.collectionGroups.firstIndex(where: { $0.name == cleanPreviousName }) else {
+                    throw TaskStoreError.collectionGroupNotFound(cleanPreviousName)
+                }
+                insertionIndex = previousIndex + 1
+            } else if let cleanNextName, cleanNextName != cleanName {
+                guard let nextIndex = file.collectionGroups.firstIndex(where: { $0.name == cleanNextName }) else {
+                    throw TaskStoreError.collectionGroupNotFound(cleanNextName)
+                }
+                insertionIndex = cleanNextName == Self.defaultCollectionGroup ? nextIndex + 1 : nextIndex
+            } else {
+                insertionIndex = file.collectionGroups.count
+            }
+
+            file.collectionGroups.insert(group, at: min(insertionIndex, file.collectionGroups.count))
+            normalizeCollectionGroups(in: &file)
+            return collectionGroupSummary(named: cleanName, in: file)
+        }
+    }
+
+    @discardableResult
     public func renameCollection(from oldName: String, to newName: String) throws -> String {
         let cleanOldName = try normalizedExplicitCollection(oldName)
 
@@ -1478,7 +1561,8 @@ private func normalizedCollectionGroups(
         }
     }
 
-    return result
+    return result.filter { $0.name == TaskStore.defaultCollectionGroup }
+        + result.filter { $0.name != TaskStore.defaultCollectionGroup }
 }
 
 private struct MigratedCollectionState {
@@ -1709,6 +1793,38 @@ private func moveCollectionInFile(_ collection: String, toGroup group: String, i
 
     file.collectionGroups[groupIndex].collections.append(collection)
     file.collectionGroups[groupIndex].collections = normalizedCollectionList(file.collectionGroups[groupIndex].collections)
+    normalizeCollectionGroups(in: &file)
+}
+
+private func reorderCollectionInFile(
+    _ collection: String,
+    toGroup group: String,
+    after previousName: String?,
+    before nextName: String?,
+    in file: inout TaskFile
+) throws {
+    addCollectionGroupIfMissing(group, to: &file)
+    removeCollectionFromGroups(collection, in: &file)
+    guard let groupIndex = file.collectionGroups.firstIndex(where: { $0.name == group }) else {
+        return
+    }
+
+    var collections = file.collectionGroups[groupIndex].collections
+    if let previousName, previousName != collection {
+        guard let previousIndex = collections.firstIndex(of: previousName) else {
+            throw TaskStoreError.collectionNotFound(previousName)
+        }
+        collections.insert(collection, at: previousIndex + 1)
+    } else if let nextName, nextName != collection {
+        guard let nextIndex = collections.firstIndex(of: nextName) else {
+            throw TaskStoreError.collectionNotFound(nextName)
+        }
+        collections.insert(collection, at: nextIndex)
+    } else {
+        collections.append(collection)
+    }
+
+    file.collectionGroups[groupIndex].collections = normalizedCollectionList(collections)
     normalizeCollectionGroups(in: &file)
 }
 

@@ -376,17 +376,288 @@ struct ActiveTaskTitleEdit {
     }
 }
 
+extension TaskItem {
+    var allowsTitleAndCollectionEditing: Bool {
+        status != .inProgress && status != .completed
+    }
+}
+
+enum TaskDragElementRole: String {
+    case sourceRow
+    case preview
+}
+
+struct TaskDragElementContext: Equatable {
+    let role: TaskDragElementRole
+    let includesMenuButton: Bool
+    let showsCollection: Bool
+    let titleLength: Int
+    let status: String
+    let collection: String
+}
+
+struct TaskDragElementMetrics: Equatable {
+    let size: CGSize
+    let windowFrame: CGRect?
+    let screenFrame: CGRect?
+}
+
+struct TaskDragElementSnapshot: Equatable {
+    let context: TaskDragElementContext
+    let metrics: TaskDragElementMetrics
+}
+
+struct TaskDragMetricsProbe: NSViewRepresentable {
+    let itemID: String
+    let context: TaskDragElementContext
+    let report: (String, TaskDragElementContext, TaskDragElementMetrics) -> Void
+
+    func makeNSView(context: Context) -> TaskDragMetricsNSView {
+        let view = TaskDragMetricsNSView(frame: .zero)
+        view.itemID = itemID
+        view.elementContext = self.context
+        view.report = report
+        view.scheduleReport()
+        return view
+    }
+
+    func updateNSView(_ nsView: TaskDragMetricsNSView, context: Context) {
+        nsView.itemID = itemID
+        nsView.elementContext = self.context
+        nsView.report = report
+        nsView.scheduleReport()
+    }
+}
+
+final class TaskDragMetricsNSView: NSView {
+    var itemID = ""
+    var elementContext: TaskDragElementContext?
+    var report: ((String, TaskDragElementContext, TaskDragElementMetrics) -> Void)?
+
+    private var lastReportedItemID = ""
+    private var lastReportedContext: TaskDragElementContext?
+    private var lastReportedMetrics: TaskDragElementMetrics?
+    private var reportIsScheduled = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        scheduleReport()
+    }
+
+    override func layout() {
+        super.layout()
+        scheduleReport()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleReport()
+    }
+
+    func scheduleReport() {
+        guard !reportIsScheduled else {
+            return
+        }
+
+        reportIsScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.reportIfChanged()
+        }
+    }
+
+    private func reportIfChanged() {
+        reportIsScheduled = false
+        guard let elementContext else {
+            return
+        }
+
+        let metrics = currentMetrics()
+        guard itemID != lastReportedItemID
+            || elementContext != lastReportedContext
+            || metrics != lastReportedMetrics else {
+            return
+        }
+
+        lastReportedItemID = itemID
+        lastReportedContext = elementContext
+        lastReportedMetrics = metrics
+        report?(itemID, elementContext, metrics)
+    }
+
+    private func currentMetrics() -> TaskDragElementMetrics {
+        let windowFrame: CGRect?
+        let screenFrame: CGRect?
+
+        if let window {
+            let frameInWindow = convert(bounds, to: nil)
+            windowFrame = frameInWindow
+            screenFrame = window.convertToScreen(frameInWindow)
+        } else {
+            windowFrame = nil
+            screenFrame = nil
+        }
+
+        return TaskDragElementMetrics(
+            size: bounds.size,
+            windowFrame: windowFrame,
+            screenFrame: screenFrame
+        )
+    }
+}
+
+@MainActor
+final class TaskDragState: ObservableObject {
+    @Published var draggedItemID: String?
+    @Published private var provisionalItemIDs: [String]?
+
+    private var sourceSnapshotsByItemID: [String: TaskDragElementSnapshot] = [:]
+
+    func beginDragging(item: TaskItem, visibleItemIDs: [String], selectedCollection _: String?) {
+        draggedItemID = item.id
+        provisionalItemIDs = visibleItemIDs
+    }
+
+    func recordElementMetrics(
+        itemID: String,
+        context: TaskDragElementContext,
+        metrics: TaskDragElementMetrics
+    ) {
+        let snapshot = TaskDragElementSnapshot(context: context, metrics: metrics)
+        switch context.role {
+        case .sourceRow:
+            sourceSnapshotsByItemID[itemID] = snapshot
+        case .preview:
+            break
+        }
+    }
+
+    func finishDragging(reason: String = "unspecified") {
+        _ = reason
+        objectWillChange.send()
+        draggedItemID = nil
+        provisionalItemIDs = nil
+    }
+
+    func sourceSize(for itemID: String) -> CGSize? {
+        let sourceSnapshot = sourceSnapshotsByItemID[itemID]
+        guard let size = sourceSnapshot?.metrics.size,
+              size.width > 0,
+              size.height > 0 else {
+            return nil
+        }
+
+        return size
+    }
+
+    func finishDraggingAfterCurrentEvent(reason: String) {
+        finishDragging(reason: reason)
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.draggedItemID != nil || self.provisionalItemIDs != nil else {
+                return
+            }
+
+            self.finishDragging(reason: "\(reason).deferred")
+        }
+    }
+
+    func orderedItems(_ items: [TaskItem]) -> [TaskItem] {
+        let visibleIDs = items.map(\.id)
+        let orderedIDs = orderedItemIDs(matching: visibleIDs)
+        guard orderedIDs != visibleIDs else {
+            return items
+        }
+
+        let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        return orderedIDs.compactMap { itemsByID[$0] }
+    }
+
+    @discardableResult
+    func moveDraggedItem(over targetID: String, visibleItemIDs: [String]) -> Bool {
+        guard let draggedItemID,
+              draggedItemID != targetID,
+              visibleItemIDs.contains(draggedItemID),
+              visibleItemIDs.contains(targetID) else {
+            return false
+        }
+
+        var orderedIDs = orderedItemIDs(matching: visibleItemIDs)
+        guard let sourceIndex = orderedIDs.firstIndex(of: draggedItemID) else {
+            return false
+        }
+
+        orderedIDs.remove(at: sourceIndex)
+        guard let targetIndex = orderedIDs.firstIndex(of: targetID) else {
+            return false
+        }
+
+        let originalTargetIndex = visibleItemIDs.firstIndex(of: targetID) ?? targetIndex
+        let insertionIndex = sourceIndex < originalTargetIndex ? targetIndex + 1 : targetIndex
+        orderedIDs.insert(draggedItemID, at: insertionIndex)
+
+        guard orderedIDs != provisionalItemIDs else {
+            return false
+        }
+
+        provisionalItemIDs = orderedIDs
+        return true
+    }
+
+    func dropPlacement(visibleItemIDs: [String]) -> (itemID: String, previousID: String?, nextID: String?)? {
+        guard let draggedItemID else {
+            return nil
+        }
+
+        let orderedIDs = orderedItemIDs(matching: visibleItemIDs)
+        guard let index = orderedIDs.firstIndex(of: draggedItemID) else {
+            return nil
+        }
+
+        let previousID = index > 0 ? orderedIDs[index - 1] : nil
+        let nextID = orderedIDs.indices.contains(index + 1) ? orderedIDs[index + 1] : nil
+        return (draggedItemID, previousID, nextID)
+    }
+
+    private func orderedItemIDs(matching visibleItemIDs: [String]) -> [String] {
+        guard let provisionalItemIDs,
+              provisionalItemIDs.count == visibleItemIDs.count,
+              Set(provisionalItemIDs) == Set(visibleItemIDs) else {
+            return visibleItemIDs
+        }
+
+        return provisionalItemIDs
+    }
+}
+
 enum TaskItemDrag {
     static let type = UTType(exportedAs: "dev.kymok.pond.task-item")
     static let acceptedTypes = [type]
 
     static func itemProvider(id: String) -> NSItemProvider {
-        let provider = NSItemProvider(object: id as NSString)
+        let provider = NSItemProvider()
         provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
             completion(id.data(using: .utf8), nil)
             return nil
         }
         return provider
+    }
+
+    @discardableResult
+    static func loadItemID(
+        from info: DropInfo,
+        completion: @escaping @MainActor @Sendable (String?) -> Void
+    ) -> Bool {
+        guard let provider = info.itemProviders(for: acceptedTypes).first else {
+            return false
+        }
+
+        provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+            let itemID = data.flatMap { String(data: $0, encoding: .utf8) }
+            Task { @MainActor in
+                completion(itemID)
+            }
+        }
+        return true
     }
 }
 

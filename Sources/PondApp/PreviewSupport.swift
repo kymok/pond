@@ -118,6 +118,7 @@ private enum PondPreviewData {
         storeName: "detail",
         selectedCollection: PondPreviewData.designCollection
     ))
+    .environmentObject(TaskDragState())
     .frame(width: 640, height: 520)
 }
 

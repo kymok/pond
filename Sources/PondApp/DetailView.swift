@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DetailView: View {
     @EnvironmentObject private var model: TaskAppModel
+    @EnvironmentObject private var taskDragState: TaskDragState
     @State private var focusedField: TaskFocusField?
     @State private var pendingDraftFocusID: String?
     @State private var activeTitleEdit: ActiveTaskTitleEdit?
@@ -12,8 +13,6 @@ struct DetailView: View {
     @State private var activeDraft: ActiveDraftTask?
     @State private var committedDrafts: [CommittedDraftTask] = []
     @State private var pendingScrollItemID: String?
-    @State private var draggedItemID: String?
-    @State private var didReorderDraggedItem = false
 
     private var visibleStoredItems: [TaskItem] {
         let baseItems = model.visibleItems
@@ -50,10 +49,14 @@ struct DetailView: View {
 
     private var visibleItems: [TaskItem] {
         if let pendingDraftItem {
-            return visibleStoredItems.insertingDraft(pendingDraftItem, after: activeDraft?.previousItemID)
+            return displayedStoredItems.insertingDraft(pendingDraftItem, after: activeDraft?.previousItemID)
         }
 
-        return visibleStoredItems
+        return displayedStoredItems
+    }
+
+    private var displayedStoredItems: [TaskItem] {
+        taskDragState.orderedItems(visibleStoredItems)
     }
 
     var body: some View {
@@ -63,7 +66,7 @@ struct DetailView: View {
                     LazyVStack(spacing: 0) {
                         let items = visibleItems
                         ForEach(items) { item in
-                            taskRow(item, storedItems: visibleStoredItems)
+                            taskRow(item, storedItems: displayedStoredItems)
                         }
                         .animation(.easeInOut(duration: 0.18), value: items.map(\.id))
 
@@ -80,6 +83,9 @@ struct DetailView: View {
                     .onDrop(
                         of: TaskItemDrag.acceptedTypes,
                         delegate: TaskListDropDelegate(
+                            visibleItems: displayedStoredItems,
+                            dragState: taskDragState,
+                            moveItem: reorderItem,
                             finishDragging: finishDragging
                         )
                     )
@@ -144,6 +150,7 @@ struct DetailView: View {
                 focusDraftItem(id: item.id)
             }
         }
+        .opacity(taskDragState.draggedItemID == item.id ? 0 : 1)
 
         if itemIsPendingDraft {
             row
@@ -153,15 +160,20 @@ struct DetailView: View {
                     beginDragging(item)
                     return TaskItemDrag.itemProvider(id: item.id)
                 } preview: {
-                    Color.clear.frame(width: 1, height: 1)
+                    TaskDragPreview(
+                        item: item,
+                        title: activeTitle(for: item) ?? item.title,
+                        showsCollection: model.selectedCollectionName == nil,
+                        collectionColor: model.collectionColor(named: item.collection),
+                        sourceSize: taskDragState.sourceSize(for: item.id)
+                    )
                 }
                 .onDrop(
                     of: TaskItemDrag.acceptedTypes,
                     delegate: TaskRowDropDelegate(
                         item: item,
                         visibleItems: storedItems,
-                        draggedItemID: $draggedItemID,
-                        didReorderDraggedItem: $didReorderDraggedItem,
+                        dragState: taskDragState,
                         moveItem: reorderItem,
                         finishDragging: finishDragging
                     )
@@ -171,13 +183,15 @@ struct DetailView: View {
 
     private func beginDragging(_ item: TaskItem) {
         settlePendingDraftBeforeDragging(item)
-        draggedItemID = item.id
-        didReorderDraggedItem = false
+        taskDragState.beginDragging(
+            item: item,
+            visibleItemIDs: visibleStoredItems.map(\.id),
+            selectedCollection: model.selectedCollectionName
+        )
     }
 
     private func finishDragging() {
-        draggedItemID = nil
-        didReorderDraggedItem = false
+        taskDragState.finishDragging(reason: "DetailView.finishDragging")
     }
 
     private func focusDraftItem(id: String) {
@@ -1188,15 +1202,15 @@ private struct ToolbarSearchField: NSViewRepresentable {
 private struct TaskRowDropDelegate: DropDelegate {
     let item: TaskItem
     let visibleItems: [TaskItem]
-    @Binding var draggedItemID: String?
-    @Binding var didReorderDraggedItem: Bool
+    let dragState: TaskDragState
     let moveItem: (String, String?, String?) -> Void
     let finishDragging: () -> Void
 
     func dropEntered(info: DropInfo) {
-        if reorderDraggedItem() {
-            didReorderDraggedItem = true
-        }
+        dragState.moveDraggedItem(
+            over: item.id,
+            visibleItemIDs: visibleItems.map(\.id)
+        )
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -1204,43 +1218,23 @@ private struct TaskRowDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        if !didReorderDraggedItem {
-            _ = reorderDraggedItem()
+        defer {
+            finishDragging()
         }
 
-        finishDragging()
-        return true
-    }
-
-    private func reorderDraggedItem() -> Bool {
-        guard let draggedItemID,
-              draggedItemID != item.id,
-              let fromIndex = visibleItems.firstIndex(where: { $0.id == draggedItemID }),
-              let toIndex = visibleItems.firstIndex(where: { $0.id == item.id }) else {
+        guard let placement = dragState.dropPlacement(visibleItemIDs: visibleItems.map(\.id)) else {
             return false
         }
 
-        var reorderedItems = visibleItems
-        let draggedItem = reorderedItems.remove(at: fromIndex)
-        guard let targetIndex = reorderedItems.firstIndex(where: { $0.id == item.id }) else {
-            return false
-        }
-
-        let insertionIndex = fromIndex < toIndex ? targetIndex + 1 : targetIndex
-        reorderedItems.insert(draggedItem, at: insertionIndex)
-
-        guard let newIndex = reorderedItems.firstIndex(where: { $0.id == draggedItemID }) else {
-            return false
-        }
-
-        let previousID = newIndex > 0 ? reorderedItems[newIndex - 1].id : nil
-        let nextID = reorderedItems.indices.contains(newIndex + 1) ? reorderedItems[newIndex + 1].id : nil
-        moveItem(draggedItemID, previousID, nextID)
+        moveItem(placement.itemID, placement.previousID, placement.nextID)
         return true
     }
 }
 
 private struct TaskListDropDelegate: DropDelegate {
+    let visibleItems: [TaskItem]
+    let dragState: TaskDragState
+    let moveItem: (String, String?, String?) -> Void
     let finishDragging: () -> Void
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -1248,8 +1242,160 @@ private struct TaskListDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        finishDragging()
+        defer {
+            finishDragging()
+        }
+
+        guard let placement = dragState.dropPlacement(visibleItemIDs: visibleItems.map(\.id)) else {
+            return false
+        }
+
+        moveItem(placement.itemID, placement.previousID, placement.nextID)
         return true
+    }
+}
+
+private struct TaskDragPreview: View {
+    let item: TaskItem
+    let title: String
+    let showsCollection: Bool
+    let collectionColor: TaskCollectionColor
+    let sourceSize: CGSize?
+
+    var body: some View {
+        previewContent
+            .frame(
+                width: frameSize.width,
+                height: sourceSize?.height,
+                alignment: .leading
+            )
+            .frame(minHeight: TaskRowLayout.rowMinHeight)
+            .clipped()
+    }
+
+    private var previewContent: some View {
+        HStack(alignment: .top, spacing: 10) {
+            TaskStatusIcon(
+                status: item.status,
+                font: .system(size: 20, weight: .regular)
+            )
+                .frame(width: 24, height: 24)
+                .alignmentGuide(.top) { dimensions in
+                    dimensions[VerticalAlignment.center] - TaskRowLayout.titleFirstLineCenterY
+                }
+
+            itemMenuIcon
+                .alignmentGuide(.top) { dimensions in
+                    dimensions[VerticalAlignment.center] - TaskRowLayout.titleFirstLineCenterY
+                }
+
+            VStack(alignment: .leading, spacing: 6) {
+                titleText
+
+                if let note = item.notes.first {
+                    notePreview(note.body)
+                }
+            }
+            .frame(minHeight: TaskRowLayout.titleLineHeight, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showsCollection {
+                collectionChip
+            }
+        }
+        .padding(.vertical, TaskRowLayout.rowVerticalPadding)
+        .padding(.horizontal, 12)
+        .frame(minHeight: TaskRowLayout.rowMinHeight)
+    }
+
+    private var frameSize: CGSize {
+        CGSize(
+            width: sourceSize?.width ?? 360,
+            height: sourceSize?.height ?? TaskRowLayout.rowMinHeight
+        )
+    }
+
+    private var titleText: some View {
+        Text(title.isEmpty ? "Title" : title)
+            .font(.system(size: TaskRowLayout.titleFont.pointSize))
+            .foregroundStyle(titleColor)
+            .lineSpacing(TaskRowLayout.titleLineSpacing)
+            .frame(minHeight: TaskRowLayout.titleLineHeight, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var titleColor: HierarchicalShapeStyle {
+        if title.isEmpty {
+            return .tertiary
+        }
+
+        return item.status.dimsTitle ? .secondary : .primary
+    }
+
+    @ViewBuilder
+    private var itemMenuIcon: some View {
+        if title != item.title {
+            ZStack {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.quaternary)
+
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 5, height: 5)
+            }
+            .frame(width: 24, height: 24)
+        } else {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 16, weight: .regular))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.primary, .quaternary)
+                .frame(width: 24, height: 24)
+        }
+    }
+
+    private func notePreview(_ body: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Image(systemName: "square.and.pencil")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 16, height: TaskRowLayout.noteLineHeight, alignment: .center)
+                .padding(.vertical, 2)
+
+            Text(body.isEmpty ? "Note" : body)
+                .font(.system(size: TaskRowLayout.noteFont.pointSize))
+                .foregroundStyle(body.isEmpty ? .tertiary : .secondary)
+                .lineSpacing(TaskRowLayout.noteLineSpacing)
+                .frame(minHeight: TaskRowLayout.noteLineHeight, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var collectionChip: some View {
+        HStack(spacing: 4) {
+            CollectionColorSwatch(color: collectionColor, size: 7)
+
+            Text(item.collection)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2)
+                .imageScale(.small)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(width: TaskRowLayout.collectionControlContentWidth, alignment: .leading)
+        .padding(.horizontal, TaskRowLayout.collectionControlHorizontalPadding)
+        .padding(.vertical, 3)
+        .background(.quaternary, in: Capsule())
+        .frame(width: TaskRowLayout.collectionControlWidth)
+        .clipped()
     }
 }
 

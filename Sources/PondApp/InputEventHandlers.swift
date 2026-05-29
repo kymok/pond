@@ -86,6 +86,67 @@ struct LocalKeyDownHandler: NSViewRepresentable {
     }
 }
 
+struct TaskDragEndMonitor: NSViewRepresentable {
+    let dragState: TaskDragState
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(dragState: dragState)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.installMonitorIfNeeded()
+        return NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.dragState = dragState
+        context.coordinator.installMonitorIfNeeded()
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.removeMonitor()
+    }
+
+    @MainActor
+    final class Coordinator {
+        var dragState: TaskDragState
+
+        private var monitor: Any?
+
+        init(dragState: TaskDragState) {
+            self.dragState = dragState
+        }
+
+        func installMonitorIfNeeded() {
+            guard monitor == nil else {
+                return
+            }
+
+            monitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleMouseUp()
+                }
+            }
+        }
+
+        func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+
+            monitor = nil
+        }
+
+        private func handleMouseUp() {
+            guard dragState.draggedItemID != nil else {
+                return
+            }
+
+            dragState.finishDraggingAfterCurrentEvent(reason: "TaskDragEndMonitor.globalMouseUp")
+        }
+    }
+}
+
 struct LocalRightClickHandler: NSViewRepresentable {
     let onRightClick: () -> Void
 

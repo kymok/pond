@@ -34,6 +34,26 @@
 			<key>UTTypeIdentifier</key>
 			<string>dev.kymok.pond.task-item</string>
 		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Pond Sidebar Collection</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.kymok.pond.sidebar-collection</string>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Pond Sidebar Group</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.kymok.pond.sidebar-group</string>
+		</dict>
 	</array>
 </dict>
 </plist>
