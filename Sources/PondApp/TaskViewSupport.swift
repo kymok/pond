@@ -26,7 +26,6 @@ enum TaskFocusDirection {
 enum TaskFocusSelectionBehavior {
     case moveInsertionPointToEnd
     case nearestInsertionPoint(toWindowPoint: NSPoint)
-    case selectAll
     case range(NSRange)
 
     @MainActor
@@ -47,8 +46,6 @@ enum TaskFocusSelectionBehavior {
         case .nearestInsertionPoint(let windowPoint):
             let location = textView.nearestInsertionIndex(toWindowPoint: windowPoint)
             textView.setSelectedRange(NSRange(location: location, length: 0).clamped(to: textView.string))
-        case .selectAll:
-            textView.selectAll(nil)
         case .range(let range):
             textView.setSelectedRange(range.clamped(to: textView.string))
         }

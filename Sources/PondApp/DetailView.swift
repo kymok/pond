@@ -212,7 +212,8 @@ struct DetailView: View {
         }
 
         if event.keyCode == KeyCode.n, event.isCommandOptionOnlyKey {
-            return focusNoteForFocusedItem()
+            _ = focusNoteForFocusedItem()
+            return true
         }
 
         guard event.isCommandOnlyKey else {
@@ -223,11 +224,23 @@ struct DetailView: View {
         case KeyCode.n:
             materializeDraft(collection: model.selectedCollectionName ?? TaskStore.defaultCollection)
             return true
+        case KeyCode.backspace:
+            return deleteFocusedItem()
         case KeyCode.d:
             return setFocusedStoredItemStatus(.draft)
         default:
             return false
         }
+    }
+
+    private func deleteFocusedItem() -> Bool {
+        guard let itemID = focusedField?.itemID,
+              let item = visibleItems.first(where: { $0.id == itemID }) else {
+            return false
+        }
+
+        deleteAndFocusPrevious(item)
+        return true
     }
 
     private func focusNoteForFocusedItem() -> Bool {
@@ -253,8 +266,20 @@ struct DetailView: View {
 
     private func materializeDraft(after previousItemID: String? = nil, collection: String? = nil) {
         if let pendingDraftItem {
-            focusTextField(.title(pendingDraftItem.id))
-            return
+            if let previousItemID {
+                if relocatePendingDraftIfEmpty(pendingDraftItem, after: previousItemID, collection: collection) {
+                    return
+                }
+
+                saveDraft(pendingDraftItem, title: pendingDraftTitle(pendingDraftItem), newFocus: nil)
+                if let remainingDraft = self.pendingDraftItem {
+                    focusTextField(.title(remainingDraft.id))
+                    return
+                }
+            } else {
+                focusTextField(.title(pendingDraftItem.id))
+                return
+            }
         }
 
         if let activeTitleEdit,
@@ -264,6 +289,30 @@ struct DetailView: View {
             return
         }
 
+        createDraft(after: previousItemID, collection: collection)
+    }
+
+    private func relocatePendingDraftIfEmpty(
+        _ item: TaskItem,
+        after previousItemID: String,
+        collection: String?
+    ) -> Bool {
+        guard pendingDraftTitle(item).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        var movedItem = item
+        movedItem.collection = collection ?? collectionForNewDraft(after: previousItemID)
+
+        withoutTaskListAnimation {
+            activeDraft = ActiveDraftTask(item: movedItem, previousItemID: previousItemID)
+            pendingScrollItemID = item.id
+        }
+        focusTextField(.title(item.id))
+        return true
+    }
+
+    private func createDraft(after previousItemID: String? = nil, collection: String? = nil) {
         let itemID = model.makeTaskID()
         withoutTaskListAnimation {
             pendingDraftFocusID = itemID
@@ -277,6 +326,14 @@ struct DetailView: View {
                 previousItemID: previousItemID
             )
         }
+    }
+
+    private func pendingDraftTitle(_ item: TaskItem) -> String {
+        if focusedField == .title(item.id) {
+            return currentDraftTitle(item)
+        }
+
+        return editedTitle(for: item)
     }
 
     private func collectionForNewDraft(after previousItemID: String?) -> String {
@@ -403,6 +460,10 @@ struct DetailView: View {
         model.items.contains { $0.id == id }
     }
 
+    private func storedItem(for item: TaskItem) -> TaskItem? {
+        model.items.first { $0.id == item.id }
+    }
+
     private func saveTitle(_ item: TaskItem, _ title: String, _ newFocus: TaskFocusField?) {
         if isActiveDraft(item) {
             saveDraft(item, title: title, newFocus: newFocus)
@@ -418,15 +479,19 @@ struct DetailView: View {
                 item,
                 title: title,
                 newFocus: newFocus,
-                status: model.autoDraftConfirmationStatus ?? .draft
+                status: confirmationStatus(for: item) ?? .draft
             )
-        } else if hasStoredItem(id: item.id) {
+        } else if let storedItem = storedItem(for: item) {
             model.renameOrDeleteIfEmpty(
-                item,
+                storedItem,
                 title: title,
-                statusAfterEdit: model.autoDraftConfirmationStatus
+                statusAfterEdit: confirmationStatus(for: storedItem)
             )
         }
+    }
+
+    private func confirmationStatus(for item: TaskItem) -> TaskStatus? {
+        item.status == .draft ? .ready : model.autoDraftConfirmationStatus
     }
 
     private func saveDraft(
@@ -522,11 +587,15 @@ struct DetailView: View {
             commitPendingDraftAndMaterializeNext(
                 item,
                 title: title,
-                status: model.autoDraftConfirmationStatus ?? .draft
+                status: confirmationStatus(for: item) ?? .draft
             )
-        } else if hasStoredItem(id: item.id) {
-            model.renameOrDeleteIfEmpty(item, title: title, statusAfterEdit: model.autoDraftConfirmationStatus)
-            materializeDraft(after: item.id)
+        } else if let storedItem = storedItem(for: item) {
+            model.renameOrDeleteIfEmpty(
+                storedItem,
+                title: title,
+                statusAfterEdit: confirmationStatus(for: storedItem)
+            )
+            materializeDraft(after: storedItem.id)
         }
     }
 
@@ -851,7 +920,7 @@ struct DetailView: View {
         }
 
         if index > 0 {
-            return (.title(visibleItems[index - 1].id), .selectAll)
+            return (.title(visibleItems[index - 1].id), .moveInsertionPointToEnd)
         }
 
         if visibleItems.indices.contains(index + 1) {

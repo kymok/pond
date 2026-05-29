@@ -659,6 +659,12 @@ struct TaskRow: View {
         switch event.keyCode {
         case KeyCode.escape:
             return defocus(event)
+        case KeyCode.returnKey, KeyCode.keypadEnter:
+            guard event.isCommandReturnKey else {
+                return false
+            }
+
+            return handleTitleReturn(textView)
         case KeyCode.end:
             guard event.isPlainKey else {
                 return false
@@ -697,7 +703,7 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveAdjacentFocus(from: textView, direction: .up, selectionBehavior: .selectAll)
+            return moveAdjacentFocus(from: textView, direction: .up, selectionBehavior: .moveInsertionPointToEnd)
         case KeyCode.arrowDown:
             if event.isCommandOnlyKey {
                 syncTitleFocusAndText(from: textView)
@@ -714,7 +720,7 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocusDownFromTitle(textView, selectionBehavior: .selectAll)
+            return moveFocusDownFromTitle(textView, selectionBehavior: .moveInsertionPointToEnd)
         default:
             return false
         }
@@ -762,7 +768,7 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveAdjacentFocus(from: fieldEditor, direction: .up, selectionBehavior: .selectAll)
+            return moveAdjacentFocus(from: fieldEditor, direction: .up, selectionBehavior: .moveInsertionPointToEnd)
         case KeyCode.arrowDown:
             if event.isCommandOnlyKey {
                 saveNewCollection()
@@ -773,7 +779,7 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocusDownFromCollection(fieldEditor, selectionBehavior: .selectAll)
+            return moveFocusDownFromCollection(fieldEditor, selectionBehavior: .moveInsertionPointToEnd)
         default:
             return false
         }
@@ -805,7 +811,7 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveAdjacentFocus(from: textView, direction: .up, selectionBehavior: .selectAll)
+            return moveAdjacentFocus(from: textView, direction: .up, selectionBehavior: .moveInsertionPointToEnd)
         case KeyCode.arrowDown:
             if event.isCommandOnlyKey {
                 syncNoteFocusAndText(from: textView)
@@ -822,7 +828,7 @@ struct TaskRow: View {
                 return false
             }
 
-            return moveFocusDownFromNote(event, textView: textView, selectionBehavior: .selectAll)
+            return moveFocusDownFromNote(event, textView: textView, selectionBehavior: .moveInsertionPointToEnd)
         default:
             return false
         }
