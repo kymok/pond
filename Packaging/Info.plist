@@ -6,8 +6,6 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>Pond</string>
-	<key>CFBundleIconFile</key>
-	<string>Pond</string>
 	<key>CFBundleIdentifier</key>
 	<string>dev.kymok.pond</string>
 	<key>CFBundleInfoDictionaryVersion</key>

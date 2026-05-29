@@ -86,7 +86,7 @@
 		A00000000000000000000231 /* TaskStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStoreTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000232 /* CommandLineInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandLineInstallerTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000251 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A00000000000000000000252 /* Pond.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Pond.icon; sourceTree = "<group>"; };
+		A00000000000000000000252 /* Pond.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = Pond.icon; sourceTree = "<group>"; };
 		A00000000000000000000301 /* libTaskCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libTaskCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000302 /* Pond.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pond.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000303 /* taskpond */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = taskpond; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -564,7 +564,7 @@
 		A00000000000000000000721 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = Pond;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -585,7 +585,7 @@
 		A00000000000000000000722 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = Pond;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
