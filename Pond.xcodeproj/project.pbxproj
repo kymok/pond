@@ -1,0 +1,703 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000101 /* TaskItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000201 /* TaskItem.swift */; };
+		A00000000000000000000102 /* TaskStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000202 /* TaskStore.swift */; };
+		A00000000000000000000103 /* CommandLineInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000203 /* CommandLineInstaller.swift */; };
+		A00000000000000000000104 /* TaskPromptTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000204 /* TaskPromptTemplate.swift */; };
+		A00000000000000000000111 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000211 /* AppModel.swift */; };
+		A00000000000000000000112 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000212 /* ContentView.swift */; };
+		A00000000000000000000113 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000213 /* DetailView.swift */; };
+		A00000000000000000000114 /* InputEventHandlers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000214 /* InputEventHandlers.swift */; };
+		A00000000000000000000115 /* PondApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000215 /* PondApp.swift */; };
+		A00000000000000000000116 /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000216 /* PreviewSupport.swift */; };
+		A00000000000000000000117 /* SelectedCollectionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000217 /* SelectedCollectionPersistence.swift */; };
+		A00000000000000000000118 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000218 /* SettingsView.swift */; };
+		A00000000000000000000119 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000219 /* SidebarView.swift */; };
+		A0000000000000000000011A /* TaskPromptSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021A /* TaskPromptSettings.swift */; };
+		A0000000000000000000011B /* TaskRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021B /* TaskRow.swift */; };
+		A0000000000000000000011C /* TaskViewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021C /* TaskViewSupport.swift */; };
+		A0000000000000000000011D /* WindowControllers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021D /* WindowControllers.swift */; };
+		A00000000000000000000121 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000221 /* main.swift */; };
+		A00000000000000000000131 /* TaskStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000231 /* TaskStoreTests.swift */; };
+		A00000000000000000000132 /* CommandLineInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000232 /* CommandLineInstallerTests.swift */; };
+		A00000000000000000000141 /* libTaskCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000301 /* libTaskCore.a */; };
+		A00000000000000000000142 /* libTaskCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000301 /* libTaskCore.a */; };
+		A00000000000000000000143 /* libTaskCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000301 /* libTaskCore.a */; };
+		A00000000000000000000151 /* Pond.icon in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000252 /* Pond.icon */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00000000000000000000401 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000501;
+			remoteInfo = TaskCore;
+		};
+		A00000000000000000000402 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000501;
+			remoteInfo = TaskCore;
+		};
+		A00000000000000000000403 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000503;
+			remoteInfo = taskpond;
+		};
+		A00000000000000000000404 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000501;
+			remoteInfo = TaskCore;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000201 /* TaskItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskItem.swift; sourceTree = "<group>"; };
+		A00000000000000000000202 /* TaskStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStore.swift; sourceTree = "<group>"; };
+		A00000000000000000000203 /* CommandLineInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandLineInstaller.swift; sourceTree = "<group>"; };
+		A00000000000000000000204 /* TaskPromptTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskPromptTemplate.swift; sourceTree = "<group>"; };
+		A00000000000000000000211 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000212 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A00000000000000000000213 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
+		A00000000000000000000214 /* InputEventHandlers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputEventHandlers.swift; sourceTree = "<group>"; };
+		A00000000000000000000215 /* PondApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000216 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
+		A00000000000000000000217 /* SelectedCollectionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectedCollectionPersistence.swift; sourceTree = "<group>"; };
+		A00000000000000000000218 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A00000000000000000000219 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		A0000000000000000000021A /* TaskPromptSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskPromptSettings.swift; sourceTree = "<group>"; };
+		A0000000000000000000021B /* TaskRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRow.swift; sourceTree = "<group>"; };
+		A0000000000000000000021C /* TaskViewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskViewSupport.swift; sourceTree = "<group>"; };
+		A0000000000000000000021D /* WindowControllers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowControllers.swift; sourceTree = "<group>"; };
+		A00000000000000000000221 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		A00000000000000000000231 /* TaskStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStoreTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000232 /* CommandLineInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandLineInstallerTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000251 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A00000000000000000000252 /* Pond.icon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Pond.icon; sourceTree = "<group>"; };
+		A00000000000000000000301 /* libTaskCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libTaskCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000302 /* Pond.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pond.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000303 /* taskpond */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = taskpond; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000304 /* TaskCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TaskCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000000000000000000611 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000141 /* libTaskCore.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000621 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000142 /* libTaskCore.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000631 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000143 /* libTaskCore.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000003 /* Sources */,
+				A00000000000000000000004 /* Tests */,
+				A00000000000000000000005 /* Packaging */,
+				A00000000000000000000006 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000003 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000011 /* TaskCore */,
+				A00000000000000000000012 /* PondApp */,
+				A00000000000000000000013 /* TaskCLI */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000004 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000014 /* TaskCoreTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000005 /* Packaging */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000251 /* Info.plist */,
+				A00000000000000000000015 /* Resources */,
+			);
+			path = Packaging;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000006 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000301 /* libTaskCore.a */,
+				A00000000000000000000302 /* Pond.app */,
+				A00000000000000000000303 /* taskpond */,
+				A00000000000000000000304 /* TaskCoreTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000011 /* TaskCore */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000203 /* CommandLineInstaller.swift */,
+				A00000000000000000000201 /* TaskItem.swift */,
+				A00000000000000000000204 /* TaskPromptTemplate.swift */,
+				A00000000000000000000202 /* TaskStore.swift */,
+			);
+			path = TaskCore;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000012 /* PondApp */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000211 /* AppModel.swift */,
+				A00000000000000000000212 /* ContentView.swift */,
+				A00000000000000000000213 /* DetailView.swift */,
+				A00000000000000000000214 /* InputEventHandlers.swift */,
+				A00000000000000000000215 /* PondApp.swift */,
+				A00000000000000000000216 /* PreviewSupport.swift */,
+				A00000000000000000000217 /* SelectedCollectionPersistence.swift */,
+				A00000000000000000000218 /* SettingsView.swift */,
+				A00000000000000000000219 /* SidebarView.swift */,
+				A0000000000000000000021A /* TaskPromptSettings.swift */,
+				A0000000000000000000021B /* TaskRow.swift */,
+				A0000000000000000000021C /* TaskViewSupport.swift */,
+				A0000000000000000000021D /* WindowControllers.swift */,
+			);
+			path = PondApp;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000013 /* TaskCLI */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000221 /* main.swift */,
+			);
+			path = TaskCLI;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000014 /* TaskCoreTests */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000232 /* CommandLineInstallerTests.swift */,
+				A00000000000000000000231 /* TaskStoreTests.swift */,
+			);
+			path = TaskCoreTests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000015 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000252 /* Pond.icon */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000000000000000000501 /* TaskCore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000810 /* Build configuration list for PBXNativeTarget "TaskCore" */;
+			buildPhases = (
+				A00000000000000000000601 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TaskCore;
+			productName = TaskCore;
+			productReference = A00000000000000000000301 /* libTaskCore.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+		A00000000000000000000502 /* Pond */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000820 /* Build configuration list for PBXNativeTarget "Pond" */;
+			buildPhases = (
+				A00000000000000000000612 /* Sources */,
+				A00000000000000000000611 /* Frameworks */,
+				A00000000000000000000613 /* Resources */,
+				A00000000000000000000614 /* Copy taskpond Helper */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000411 /* PBXTargetDependency */,
+				A00000000000000000000412 /* PBXTargetDependency */,
+			);
+			name = Pond;
+			productName = Pond;
+			productReference = A00000000000000000000302 /* Pond.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A00000000000000000000503 /* taskpond */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000830 /* Build configuration list for PBXNativeTarget "taskpond" */;
+			buildPhases = (
+				A00000000000000000000622 /* Sources */,
+				A00000000000000000000621 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000413 /* PBXTargetDependency */,
+			);
+			name = taskpond;
+			productName = taskpond;
+			productReference = A00000000000000000000303 /* taskpond */;
+			productType = "com.apple.product-type.tool";
+		};
+		A00000000000000000000504 /* TaskCoreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000840 /* Build configuration list for PBXNativeTarget "TaskCoreTests" */;
+			buildPhases = (
+				A00000000000000000000632 /* Sources */,
+				A00000000000000000000631 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000414 /* PBXTargetDependency */,
+			);
+			name = TaskCoreTests;
+			productName = TaskCoreTests;
+			productReference = A00000000000000000000304 /* TaskCoreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					A00000000000000000000501 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					A00000000000000000000502 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					A00000000000000000000503 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					A00000000000000000000504 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = A00000000000000000000501;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000800 /* Build configuration list for PBXProject "Pond" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000002;
+			productRefGroup = A00000000000000000000006 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000502 /* Pond */,
+				A00000000000000000000503 /* taskpond */,
+				A00000000000000000000501 /* TaskCore */,
+				A00000000000000000000504 /* TaskCoreTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000613 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000151 /* Pond.icon in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A00000000000000000000614 /* Copy taskpond Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/taskpond",
+			);
+			name = "Copy taskpond Helper";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Library/Helpers/taskpond",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nhelper_dir=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Library/Helpers\"\nmkdir -p \"$helper_dir\"\ncp \"$BUILT_PRODUCTS_DIR/taskpond\" \"$helper_dir/taskpond\"\nchmod 755 \"$helper_dir/taskpond\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000000000000000000601 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000103 /* CommandLineInstaller.swift in Sources */,
+				A00000000000000000000101 /* TaskItem.swift in Sources */,
+				A00000000000000000000104 /* TaskPromptTemplate.swift in Sources */,
+				A00000000000000000000102 /* TaskStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000612 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000111 /* AppModel.swift in Sources */,
+				A00000000000000000000112 /* ContentView.swift in Sources */,
+				A00000000000000000000113 /* DetailView.swift in Sources */,
+				A00000000000000000000114 /* InputEventHandlers.swift in Sources */,
+				A00000000000000000000115 /* PondApp.swift in Sources */,
+				A00000000000000000000116 /* PreviewSupport.swift in Sources */,
+				A00000000000000000000117 /* SelectedCollectionPersistence.swift in Sources */,
+				A00000000000000000000118 /* SettingsView.swift in Sources */,
+				A00000000000000000000119 /* SidebarView.swift in Sources */,
+				A0000000000000000000011A /* TaskPromptSettings.swift in Sources */,
+				A0000000000000000000011B /* TaskRow.swift in Sources */,
+				A0000000000000000000011C /* TaskViewSupport.swift in Sources */,
+				A0000000000000000000011D /* WindowControllers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000622 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000121 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000632 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000132 /* CommandLineInstallerTests.swift in Sources */,
+				A00000000000000000000131 /* TaskStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00000000000000000000411 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000501 /* TaskCore */; targetProxy = A00000000000000000000401 /* PBXContainerItemProxy */; };
+		A00000000000000000000412 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000503 /* taskpond */; targetProxy = A00000000000000000000403 /* PBXContainerItemProxy */; };
+		A00000000000000000000413 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000501 /* TaskCore */; targetProxy = A00000000000000000000402 /* PBXContainerItemProxy */; };
+		A00000000000000000000414 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A00000000000000000000501 /* TaskCore */; targetProxy = A00000000000000000000404 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000701 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_CODE_COVERAGE = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000702 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_CODE_COVERAGE = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A00000000000000000000711 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				MACH_O_TYPE = staticlib;
+				PRODUCT_NAME = TaskCore;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		A00000000000000000000712 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				MACH_O_TYPE = staticlib;
+				PRODUCT_NAME = TaskCore;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		A00000000000000000000721 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Packaging/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.kymok.pond;
+				PRODUCT_NAME = Pond;
+				SKIP_INSTALL = NO;
+			};
+			name = Debug;
+		};
+		A00000000000000000000722 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Packaging/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.kymok.pond;
+				PRODUCT_NAME = Pond;
+				SKIP_INSTALL = NO;
+			};
+			name = Release;
+		};
+		A00000000000000000000731 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				OTHER_SWIFT_FLAGS = "-parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.kymok.pond.taskpond;
+				PRODUCT_NAME = taskpond;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		A00000000000000000000732 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				OTHER_SWIFT_FLAGS = "-parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.kymok.pond.taskpond;
+				PRODUCT_NAME = taskpond;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		A00000000000000000000741 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.kymok.pond.TaskCoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		A00000000000000000000742 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.kymok.pond.TaskCoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000800 /* Build configuration list for PBXProject "Pond" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000701 /* Debug */,
+				A00000000000000000000702 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000810 /* Build configuration list for PBXNativeTarget "TaskCore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000711 /* Debug */,
+				A00000000000000000000712 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000820 /* Build configuration list for PBXNativeTarget "Pond" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000721 /* Debug */,
+				A00000000000000000000722 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000830 /* Build configuration list for PBXNativeTarget "taskpond" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000731 /* Debug */,
+				A00000000000000000000732 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000840 /* Build configuration list for PBXNativeTarget "TaskCoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000741 /* Debug */,
+				A00000000000000000000742 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000001 /* Project object */;
+}

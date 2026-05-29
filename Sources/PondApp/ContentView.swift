@@ -199,7 +199,7 @@ private struct CollectionPromptSheet: View {
 
 private func deleteCollectionMessage(for collection: TaskCollectionSummary) -> String {
     let itemLabel = collection.totalCount == 1 ? "task" : "tasks"
-    return "This will delete \"\(collection.name)\" and \(collection.totalCount) \(itemLabel)."
+    return "This will delete \"\(collection.displayName)\" and \(collection.totalCount) \(itemLabel)."
 }
 
 private enum BulkStatusSelection: Hashable {
@@ -231,7 +231,7 @@ private struct BulkStatusChangeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Bulk Change Status")
+            Text("Bulk Change Statuses")
                 .font(.headline)
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
@@ -241,7 +241,7 @@ private struct BulkStatusChangeSheet: View {
                             .frame(width: 128, alignment: .leading)
 
                         Picker("Change \(status.displayName) to", selection: selection(for: status)) {
-                            Text("No change").tag(BulkStatusSelection.noChange)
+                            Text("No Change").tag(BulkStatusSelection.noChange)
 
                             ForEach(TaskStatus.allCases, id: \.self) { replacement in
                                 statusLabel(for: replacement)

@@ -184,6 +184,8 @@ public struct TaskCollectionSummary: Identifiable, Equatable, Sendable {
     public var id: String { name }
 
     public let name: String
+    public let displayName: String
+    public let groupName: String
     public let totalCount: Int
     public let incompleteCount: Int
     public let statusIndicator: TaskStatus?
@@ -193,6 +195,8 @@ public struct TaskCollectionSummary: Identifiable, Equatable, Sendable {
 
     public init(
         name: String,
+        displayName: String? = nil,
+        groupName: String = "DefaultGroup",
         totalCount: Int,
         incompleteCount: Int,
         statusIndicator: TaskStatus? = nil,
@@ -201,11 +205,25 @@ public struct TaskCollectionSummary: Identifiable, Equatable, Sendable {
         promptTemplate: String? = nil
     ) {
         self.name = name
+        self.displayName = displayName ?? name
+        self.groupName = groupName
         self.totalCount = totalCount
         self.incompleteCount = incompleteCount
         self.statusIndicator = statusIndicator
         self.color = color
         self.isArchived = isArchived
         self.promptTemplate = promptTemplate
+    }
+}
+
+public struct TaskCollectionGroupSummary: Identifiable, Equatable, Sendable {
+    public var id: String { name }
+
+    public let name: String
+    public let collections: [TaskCollectionSummary]
+
+    public init(name: String, collections: [TaskCollectionSummary] = []) {
+        self.name = name
+        self.collections = collections
     }
 }

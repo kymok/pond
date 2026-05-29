@@ -76,7 +76,7 @@ struct WindowStateController: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.view = nsView
-        context.coordinator.configureWindowIfNeeded()
+        context.coordinator.scheduleConfigureWindowIfNeeded()
     }
 
     @MainActor
@@ -86,10 +86,24 @@ struct WindowStateController: NSViewRepresentable {
         private weak var configuredWindow: NSWindow?
         private weak var configuredSplitView: NSSplitView?
         private var frameObserverTokens: [NSObjectProtocol] = []
+        private var configureWindowWorkItem: DispatchWorkItem?
         private var splitViewRetry: DispatchWorkItem?
         private var splitViewRetryCount = 0
 
+        func scheduleConfigureWindowIfNeeded() {
+            configureWindowWorkItem?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.configureWindowIfNeeded()
+                }
+            }
+            configureWindowWorkItem = workItem
+            DispatchQueue.main.async(execute: workItem)
+        }
+
         func configureWindowIfNeeded() {
+            configureWindowWorkItem = nil
             guard let window = view?.window else {
                 retryConfigureSplitView()
                 return
@@ -205,7 +219,7 @@ struct WindowStateController: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            coordinator?.configureWindowIfNeeded()
+            coordinator?.scheduleConfigureWindowIfNeeded()
         }
     }
 }

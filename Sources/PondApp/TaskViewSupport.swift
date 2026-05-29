@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import TaskCore
+import UniformTypeIdentifiers
 
 enum TaskFocusField: Hashable {
     case title(String)
@@ -378,6 +379,20 @@ struct ActiveTaskTitleEdit {
     }
 }
 
+enum TaskItemDrag {
+    static let type = UTType(exportedAs: "dev.kymok.pond.task-item")
+    static let acceptedTypes = [type]
+
+    static func itemProvider(id: String) -> NSItemProvider {
+        let provider = NSItemProvider(object: id as NSString)
+        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
+            completion(id.data(using: .utf8), nil)
+            return nil
+        }
+        return provider
+    }
+}
+
 extension NSEvent {
     var isPlainKey: Bool {
         let modifiers: ModifierFlags = [.command, .option, .control, .shift]
@@ -399,6 +414,10 @@ extension NSEvent {
 
     var isPlainReturnKey: Bool {
         isPlainKey && (keyCode == KeyCode.returnKey || keyCode == KeyCode.keypadEnter)
+    }
+
+    var isCommandReturnKey: Bool {
+        isCommandOnlyKey && (keyCode == KeyCode.returnKey || keyCode == KeyCode.keypadEnter)
     }
 
     var isModifiedBackspace: Bool {

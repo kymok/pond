@@ -129,7 +129,9 @@ struct DetailView: View {
             moveFocus: moveFocus,
             moveItem: moveItem,
             deleteAndFocusPrevious: deleteAndFocusPrevious,
-            deleteEmptyAndMoveFocusDown: deleteEmptyAndMoveFocusDown
+            deleteEmptyAndMoveFocusDown: deleteEmptyAndMoveFocusDown,
+            mergeWithPrevious: mergeWithPrevious,
+            splitTitle: splitTitle
         )
         .transition(
             .asymmetric(
@@ -223,8 +225,6 @@ struct DetailView: View {
             return true
         case KeyCode.d:
             return setFocusedStoredItemStatus(.draft)
-        case KeyCode.r:
-            return setFocusedStoredItemStatus(.ready)
         default:
             return false
         }
@@ -747,6 +747,101 @@ struct DetailView: View {
         return true
     }
 
+    private func mergeWithPrevious(_ item: TaskItem, title currentTitle: String) -> Bool {
+        let visibleItems = self.visibleItems
+        guard let index = visibleItems.firstIndex(where: { $0.id == item.id }),
+              index > 0 else {
+            return false
+        }
+
+        let previousItem = visibleItems[index - 1]
+        guard previousItem.status == .draft || previousItem.status == .ready else {
+            return true
+        }
+        guard previousItem.notes.isEmpty else {
+            return true
+        }
+
+        let insertionPoint = (previousItem.title as NSString).length
+        if isActiveDraft(item) {
+            discardDraft(item.id)
+            model.rename(previousItem, title: previousItem.title + currentTitle, statusAfterEdit: nil)
+            focusTextField(.title(previousItem.id), selectionBehavior: .range(NSRange(location: insertionPoint, length: 0)))
+            return true
+        }
+
+        guard hasStoredItem(id: item.id),
+              model.mergeItem(item, into: previousItem, title: currentTitle) != nil else {
+            return true
+        }
+
+        clearActiveTitleEdit(id: item.id)
+        focusTextField(.title(previousItem.id), selectionBehavior: .range(NSRange(location: insertionPoint, length: 0)))
+        return true
+    }
+
+    private func splitTitle(_ item: TaskItem, firstTitle: String, secondTitle: String) -> Bool {
+        if isActiveDraft(item) {
+            return splitActiveDraft(item, firstTitle: firstTitle, secondTitle: secondTitle)
+        }
+
+        guard hasStoredItem(id: item.id) else {
+            return false
+        }
+
+        let secondID = model.makeTaskID()
+        guard let secondItem = model.splitItem(
+            item,
+            firstTitle: firstTitle,
+            secondTitle: secondTitle,
+            secondID: secondID
+        ) else {
+            return true
+        }
+
+        clearActiveTitleEdit(id: item.id)
+        pendingScrollItemID = secondItem.id
+        focusTextField(.title(secondItem.id), selectionBehavior: .range(NSRange(location: 0, length: 0)))
+        return true
+    }
+
+    private func splitActiveDraft(_ item: TaskItem, firstTitle: String, secondTitle: String) -> Bool {
+        guard isActiveDraft(item) else {
+            return false
+        }
+
+        let collection = activeDraft?.item.collection ?? item.collection
+        let previousItemID = activeDraft?.previousItemID
+        let secondID = uniqueDraftCommitID(excluding: item.id)
+
+        withoutTaskListAnimation {
+            discardDraft(item.id)
+        }
+
+        guard let firstItem = model.createTask(
+            title: firstTitle,
+            collection: collection,
+            id: item.id,
+            status: .ready
+        ),
+            let secondItem = model.createTask(
+                title: secondTitle,
+                collection: collection,
+                id: secondID,
+                status: .draft
+            ) else {
+            return true
+        }
+
+        if let previousItemID {
+            model.reorderItem(id: firstItem.id, after: previousItemID, before: nil)
+        }
+        model.reorderItem(id: secondItem.id, after: firstItem.id, before: nil)
+        pendingScrollItemID = secondItem.id
+        focusTextField(.title(secondItem.id), selectionBehavior: .range(NSRange(location: 0, length: 0)))
+        return true
+    }
+
     private func focusTargetAfterDeleting(
         _ item: TaskItem
     ) -> (field: TaskFocusField, selectionBehavior: TaskFocusSelectionBehavior)? {
@@ -896,7 +991,7 @@ private struct DetailToolbar: ToolbarContent {
             } else {
                 Divider()
 
-                Button("Bulk Change Status...") {
+                Button("Bulk Change Statuses…") {
                     model.requestBulkStatusChangeForVisibleItems()
                 }
                 .disabled(!model.canBulkChangeVisibleStatuses)
@@ -907,7 +1002,7 @@ private struct DetailToolbar: ToolbarContent {
         .menuStyle(.button)
         .buttonStyle(.bordered)
         .menuIndicator(.hidden)
-        .help("Task options")
+        .help("Task Options")
     }
 }
 
@@ -1086,20 +1181,6 @@ private struct TaskListDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         finishDragging()
         return true
-    }
-}
-
-private enum TaskItemDrag {
-    static let type = UTType(exportedAs: "dev.kymok.pond.task-item")
-    static let acceptedTypes = [type]
-
-    static func itemProvider(id: String) -> NSItemProvider {
-        let provider = NSItemProvider(object: id as NSString)
-        provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { completion in
-            completion(id.data(using: .utf8), nil)
-            return nil
-        }
-        return provider
     }
 }
 

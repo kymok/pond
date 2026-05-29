@@ -28,6 +28,7 @@ final class TaskAppModel: ObservableObject {
 
     @Published var items: [TaskItem] = []
     @Published var collectionSummaries: [TaskCollectionSummary] = []
+    @Published var collectionGroupSummaries: [TaskCollectionGroupSummary] = []
     @Published var selectedCollection: String
     @Published var searchText = ""
     @Published var showsIncompleteOnly = false
@@ -48,6 +49,7 @@ final class TaskAppModel: ObservableObject {
     @Published var collectionDeletionRequest: TaskCollectionSummary?
     @Published var bulkStatusChangeRequest: TaskBulkStatusChangeRequest?
     @Published var collectionPromptEditRequest: TaskCollectionPromptEditRequest?
+    @Published var groupEditingRequest: String?
     @Published private var recentlyCompletedVisibleIDs: Set<String> = []
 
     private let store: TaskStore
@@ -79,21 +81,24 @@ final class TaskAppModel: ObservableObject {
     }
 
     var collectionNames: [String] {
-        visibleCollectionSummaries.map(\.name)
+        visibleCollectionSummaries.map(\.displayName)
     }
 
     var visibleCollectionSummaries: [TaskCollectionSummary] {
         collectionSummaries.filter { !$0.isArchived }
     }
 
-    var archivedCollectionSummaries: [TaskCollectionSummary] {
-        collectionSummaries.filter(\.isArchived)
+    var editableCollectionGroups: [TaskCollectionGroupSummary] {
+        collectionGroups(showingArchived: false)
+    }
+
+    var visibleCollectionGroups: [TaskCollectionGroupSummary] {
+        collectionGroups(showingArchived: showsArchivedCollections)
     }
 
     var navigableCollectionIDs: [String] {
         [Self.allCollectionID]
-            + visibleCollectionSummaries.map(\.name)
-            + (showsArchivedCollections ? archivedCollectionSummaries.map(\.name) : [])
+            + visibleCollectionGroups.flatMap { $0.collections.map(\.name) }
     }
 
     var selectedCollectionSummary: TaskCollectionSummary? {
@@ -106,6 +111,10 @@ final class TaskAppModel: ObservableObject {
 
     func collectionColor(named name: String) -> TaskCollectionColor {
         collectionSummaries.first { $0.name == name }?.color ?? .gray
+    }
+
+    func collectionGroupDisplayName(_ group: String) -> String {
+        group == TaskStore.defaultCollectionGroup ? "No Group" : group
     }
 
     func selectAdjacentCollection(offset: Int) {
@@ -124,7 +133,7 @@ final class TaskAppModel: ObservableObject {
     }
 
     var canDeleteSelectedCollection: Bool {
-        selectedCollectionSummary != nil
+        selectedCollectionSummary.map { !isDefaultCollection($0) } ?? false
     }
 
     var visibleItems: [TaskItem] {
@@ -156,6 +165,7 @@ final class TaskAppModel: ObservableObject {
             updateRecentlyCompletedVisibility(previousStatuses: previousStatuses, loadedItems: loadedItems)
             items = loadedItems
             collectionSummaries = try store.collectionSummaries()
+            collectionGroupSummaries = try store.collectionGroupSummaries()
 
             if selectedCollectionName != nil && !collectionSummaries.contains(where: { $0.name == selectedCollection }) {
                 selectedCollection = Self.allCollectionID
@@ -226,25 +236,169 @@ final class TaskAppModel: ObservableObject {
     }
 
     @discardableResult
-    func createCollectionForEditing() -> String? {
-        let name = uniqueCollectionName(base: "New Collection")
+    func createCollectionForEditing(group: String = TaskStore.defaultCollectionGroup) -> String? {
+        let name = uniqueCollectionName(base: "New Collection", group: group)
 
         return updateStore(reloadOnError: false) {
-            let createdName = try store.createCollection(name: name)
+            let createdName = try store.createCollection(name: name, group: group)
             selectedCollection = createdName
             return createdName
         }
     }
 
     @discardableResult
+    func createCollectionGroupForEditing() -> String? {
+        let name = uniqueCollectionGroupName(base: "New Group")
+
+        return updateStore(reloadOnError: false) {
+            let createdName = try store.createCollectionGroup(name: name)
+            groupEditingRequest = createdName
+            return createdName
+        }
+    }
+
+    @discardableResult
+    func createCollectionGroupAndMoveCollectionForEditing(_ collection: TaskCollectionSummary) -> String? {
+        guard !isDefaultCollection(collection) else {
+            return nil
+        }
+
+        let name = uniqueCollectionGroupName(base: "New Group")
+
+        return updateStore(reloadOnError: false, ignoring: isStaleCollection) {
+            let createdName = try store.createCollectionGroup(name: name)
+            let moved = try store.moveCollection(name: collection.name, toGroup: createdName)
+            if selectedCollection == collection.name {
+                selectedCollection = moved.name
+            }
+            groupEditingRequest = createdName
+            return createdName
+        }
+    }
+
+    func clearGroupEditingRequest(_ group: String) {
+        if groupEditingRequest == group {
+            groupEditingRequest = nil
+        }
+    }
+
+    @discardableResult
+    func renameCollectionGroup(from oldName: String, to newName: String) -> String? {
+        let cleanName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else {
+            reload()
+            return nil
+        }
+
+        let finalName = uniqueCollectionGroupName(base: cleanName, excluding: oldName)
+        let selectedReplacement = replacementSelectedCollectionName(
+            whenRenamingGroup: oldName,
+            to: finalName
+        )
+
+        return updateStore(disablesAnimations: true, ignoring: isStaleCollectionGroup) {
+            let renamedGroup = try store.renameCollectionGroup(from: oldName, to: finalName)
+            if let selectedReplacement {
+                selectedCollection = selectedReplacement
+            }
+            return renamedGroup
+        }
+    }
+
+    @discardableResult
+    func deleteCollectionGroup(_ name: String) -> Bool {
+        updateStore(ignoring: isStaleCollectionGroup) {
+            try store.deleteCollectionGroup(name: name)
+        } ?? false
+    }
+
+    func canDeleteCollectionGroup(_ name: String) -> Bool {
+        name != TaskStore.defaultCollectionGroup
+    }
+
+    func isDefaultCollection(_ collection: TaskCollectionSummary) -> Bool {
+        collection.name == TaskStore.defaultCollection
+    }
+
+    func moveCollection(_ collection: TaskCollectionSummary, toGroup group: String) {
+        guard !isDefaultCollection(collection) else {
+            return
+        }
+
+        updateStore(ignoring: isStaleCollection) {
+            let finalName = uniqueCollectionName(
+                base: collection.displayName,
+                group: group,
+                excluding: collection.name
+            )
+            let targetName = collectionAPIName(group: group, displayName: finalName)
+            let movedName: String
+            if targetName == collectionAPIName(group: group, displayName: collection.displayName) {
+                movedName = try store.moveCollection(name: collection.name, toGroup: group).name
+            } else {
+                movedName = try store.renameCollection(from: collection.name, to: targetName)
+            }
+
+            if selectedCollection == collection.name {
+                selectedCollection = movedName
+            }
+        }
+    }
+
+    func mergeCollectionGroup(from sourceName: String, to targetName: String) {
+        guard sourceName != TaskStore.defaultCollectionGroup,
+              sourceName != targetName,
+              let sourceGroup = collectionGroupSummaries.first(where: { $0.name == sourceName }) else {
+            return
+        }
+
+        var usedDisplayNames = Set(
+            collectionGroupSummaries
+                .first { $0.name == targetName }?
+                .collections
+                .map(\.displayName) ?? []
+        )
+        var selectedReplacement: String?
+
+        updateStore(ignoring: isStaleCollectionGroup) {
+            for collection in sourceGroup.collections {
+                let displayName = uniqueName(base: collection.displayName, usedNames: &usedDisplayNames)
+                let movedName = try store.renameCollection(
+                    from: collection.name,
+                    to: collectionAPIName(group: targetName, displayName: displayName)
+                )
+
+                if selectedCollection == collection.name {
+                    selectedReplacement = movedName
+                }
+            }
+
+            let deleted = try store.deleteCollectionGroup(name: sourceName)
+            if let selectedReplacement {
+                selectedCollection = selectedReplacement
+            }
+            return deleted
+        }
+    }
+
+    @discardableResult
     func renameCollection(from oldName: String, to newName: String) -> String? {
+        guard oldName != TaskStore.defaultCollection else {
+            reload()
+            return nil
+        }
+
         guard !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             reload()
             return nil
         }
 
         return updateStore(ignoring: isMissingCollection) {
-            let finalName = try store.renameCollection(from: oldName, to: newName)
+            let targetName = uniqueCollectionName(
+                oldName: oldName,
+                requestedName: newName
+            ) ?? newName
+            let finalName = try store.renameCollection(from: oldName, to: targetName)
             selectedCollection = finalName
             return finalName
         }
@@ -252,7 +406,12 @@ final class TaskAppModel: ObservableObject {
 
     @discardableResult
     func deleteEmptyCollection(_ name: String) -> Bool {
-        updateStore(ignoring: isInvalidCollection) {
+        guard name != TaskStore.defaultCollection else {
+            reload()
+            return false
+        }
+
+        return updateStore(ignoring: isInvalidCollection) {
             let deleted = try store.deleteEmptyCollection(name: name)
             if deleted && selectedCollection == name {
                 selectedCollection = Self.allCollectionID
@@ -270,6 +429,10 @@ final class TaskAppModel: ObservableObject {
     }
 
     func requestDeleteCollection(_ collection: TaskCollectionSummary) {
+        guard !isDefaultCollection(collection) else {
+            return
+        }
+
         collectionDeletionRequest = collection
     }
 
@@ -365,7 +528,12 @@ final class TaskAppModel: ObservableObject {
 
     @discardableResult
     func deleteCollection(_ name: String) -> Bool {
-        updateStore(ignoring: isStaleCollection) {
+        guard name != TaskStore.defaultCollection else {
+            reload()
+            return false
+        }
+
+        return updateStore(ignoring: isStaleCollection) {
             let deleted = try store.deleteCollection(name: name)
             if deleted {
                 selectedCollection = Self.allCollectionID
@@ -517,6 +685,30 @@ final class TaskAppModel: ObservableObject {
     }
 
     @discardableResult
+    func mergeItem(_ item: TaskItem, into previousItem: TaskItem, title: String) -> TaskItem? {
+        updateStore(reloadOnError: false, ignoring: isMissingTask) {
+            try store.mergeItem(id: item.id, intoPrevious: previousItem.id, title: title)
+        }.flatMap { $0 }
+    }
+
+    @discardableResult
+    func splitItem(
+        _ item: TaskItem,
+        firstTitle: String,
+        secondTitle: String,
+        secondID: String
+    ) -> TaskItem? {
+        updateStore(reloadOnError: false, ignoring: isMissingTask) {
+            try store.splitItem(
+                id: item.id,
+                firstTitle: firstTitle,
+                secondTitle: secondTitle,
+                secondID: secondID
+            )
+        }
+    }
+
+    @discardableResult
     func delete(_ item: TaskItem) -> Bool {
         updateStore(reloadOnError: false, ignoring: isMissingTask) {
             try store.delete(id: item.id, ifCurrent: item)
@@ -574,12 +766,13 @@ final class TaskAppModel: ObservableObject {
     @discardableResult
     private func updateStore<T>(
         reloadOnError: Bool = true,
+        disablesAnimations: Bool = false,
         ignoring shouldIgnoreError: (Error) -> Bool = { _ in false },
         _ update: () throws -> T
     ) -> T? {
         do {
             let result = try update()
-            reload()
+            reload(disablesAnimations: disablesAnimations)
             return result
         } catch {
             let isIgnored = shouldIgnoreError(error)
@@ -587,7 +780,7 @@ final class TaskAppModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
             if reloadOnError || isIgnored {
-                reload()
+                reload(disablesAnimations: disablesAnimations)
             }
             return nil
         }
@@ -628,12 +821,35 @@ final class TaskAppModel: ObservableObject {
         return false
     }
 
+    private func isMissingCollectionGroup(_ error: Error) -> Bool {
+        guard let error = error as? TaskStoreError else {
+            return false
+        }
+
+        if case .collectionGroupNotFound = error {
+            return true
+        }
+        return false
+    }
+
     private func isInvalidCollection(_ error: Error) -> Bool {
         error as? TaskStoreError == .invalidCollection
     }
 
+    private func isInvalidCollectionGroup(_ error: Error) -> Bool {
+        error as? TaskStoreError == .invalidCollectionGroup
+    }
+
     private func isStaleCollection(_ error: Error) -> Bool {
-        isInvalidCollection(error) || isMissingCollection(error)
+        isInvalidCollection(error)
+            || isMissingCollection(error)
+            || error as? TaskStoreError == .defaultCollection
+    }
+
+    private func isStaleCollectionGroup(_ error: Error) -> Bool {
+        isInvalidCollectionGroup(error)
+            || isMissingCollectionGroup(error)
+            || error as? TaskStoreError == .defaultCollectionGroup
     }
 
     private func isNoMatchingTasks(_ error: Error) -> Bool {
@@ -641,7 +857,19 @@ final class TaskAppModel: ObservableObject {
     }
 
     private func uniqueCollectionName(base: String) -> String {
-        let existing = Set(collectionNames)
+        uniqueCollectionName(base: base, group: TaskStore.defaultCollectionGroup)
+    }
+
+    private func uniqueCollectionName(
+        base: String,
+        group: String,
+        excluding excludedName: String? = nil
+    ) -> String {
+        let existing = Set(collectionGroupSummaries
+            .first { $0.name == group }?
+            .collections
+            .filter { $0.name != excludedName }
+            .map(\.displayName) ?? [])
         guard existing.contains(base) else {
             return base
         }
@@ -652,6 +880,98 @@ final class TaskAppModel: ObservableObject {
         }
 
         return "\(base) \(index)"
+    }
+
+    private func uniqueCollectionGroupName(base: String, excluding excludedName: String? = nil) -> String {
+        let existing = Set(collectionGroupSummaries
+            .map(\.name)
+            .filter { $0 != excludedName })
+        guard existing.contains(base) else {
+            return base
+        }
+
+        var index = 2
+        while existing.contains("\(base) \(index)") {
+            index += 1
+        }
+
+        return "\(base) \(index)"
+    }
+
+    private func uniqueCollectionName(oldName: String, requestedName: String) -> String? {
+        guard let currentCollection = collectionSummaries.first(where: { $0.name == oldName }),
+              let reference = collectionReference(
+                from: requestedName,
+                defaultGroup: currentCollection.groupName
+              ) else {
+            return nil
+        }
+
+        let displayName = uniqueCollectionName(
+            base: reference.displayName,
+            group: reference.groupName,
+            excluding: oldName
+        )
+        return collectionAPIName(group: reference.groupName, displayName: displayName)
+    }
+
+    private func replacementSelectedCollectionName(
+        whenRenamingGroup oldName: String,
+        to newName: String
+    ) -> String? {
+        guard let selectedSummary = collectionSummaries.first(where: { $0.name == selectedCollection }),
+              selectedSummary.groupName == oldName else {
+            return nil
+        }
+
+        return collectionAPIName(group: newName, displayName: selectedSummary.displayName)
+    }
+
+    private func collectionReference(
+        from name: String,
+        defaultGroup: String
+    ) -> (groupName: String, displayName: String)? {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = cleanName.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+
+        switch parts.count {
+        case 1:
+            let displayName = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            return displayName.isEmpty ? nil : (defaultGroup, displayName)
+        case 2:
+            let groupName = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayName = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !groupName.isEmpty, !displayName.isEmpty else {
+                return nil
+            }
+            return (groupName, displayName)
+        default:
+            return nil
+        }
+    }
+
+    private func collectionAPIName(group: String, displayName: String) -> String {
+        if group == TaskStore.defaultCollectionGroup {
+            return displayName == "Inbox" ? TaskStore.defaultCollection : displayName
+        }
+
+        return "\(group)/\(displayName)"
+    }
+
+    private func uniqueName(base: String, usedNames: inout Set<String>) -> String {
+        guard usedNames.contains(base) else {
+            usedNames.insert(base)
+            return base
+        }
+
+        var index = 2
+        while usedNames.contains("\(base) \(index)") {
+            index += 1
+        }
+
+        let name = "\(base) \(index)"
+        usedNames.insert(name)
+        return name
     }
 
     private func updateRecentlyCompletedVisibility(
@@ -728,6 +1048,40 @@ final class TaskAppModel: ObservableObject {
             collection: nil,
             itemCount: items.count
         )
+    }
+
+    private func collectionGroups(showingArchived: Bool) -> [TaskCollectionGroupSummary] {
+        collectionGroupSummaries
+            .map { group in
+                let visibleCollections = group.collections.filter { !$0.isArchived }
+                let archivedCollections = showingArchived
+                    ? group.collections
+                        .filter(\.isArchived)
+                        .sorted(by: archivedCollectionComesBefore)
+                    : []
+
+                return TaskCollectionGroupSummary(
+                    name: group.name,
+                    collections: visibleCollections + archivedCollections
+                )
+            }
+            .filter { group in
+                group.name != TaskStore.defaultCollectionGroup || !group.collections.isEmpty
+            }
+    }
+
+    private func archivedCollectionComesBefore(
+        _ lhs: TaskCollectionSummary,
+        _ rhs: TaskCollectionSummary
+    ) -> Bool {
+        switch lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) {
+        case .orderedSame:
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        case .orderedAscending:
+            true
+        case .orderedDescending:
+            false
+        }
     }
 }
 
@@ -930,7 +1284,7 @@ struct CollectionActionMenuItems: View {
             copyToPasteboard(examplePrompt)
         }
 
-        Button("Edit Prompt...") {
+        Button("Edit Prompt…") {
             model.requestCollectionPromptEdit(collection)
         }
 
@@ -947,6 +1301,9 @@ struct CollectionActionMenuItems: View {
         Divider()
 
         CollectionColorMenu(collection: collection)
+
+        groupMenu
+            .disabled(model.isDefaultCollection(collection))
 
         Divider()
 
@@ -966,7 +1323,7 @@ struct CollectionActionMenuItems: View {
         }
         .disabled(!model.canClearCompletedItems(in: collection))
 
-        Button("Bulk Change Status...") {
+        Button("Bulk Change Statuses…") {
             requestBulkStatusChange()
         }
         .disabled(!canBulkChangeStatuses)
@@ -987,7 +1344,7 @@ struct CollectionActionMenuItems: View {
     @ViewBuilder
     private var exportButton: some View {
         if showsExport {
-            Button("Export Collection...") {
+            Button("Export Collection…") {
                 model.exportCollection(collection)
             }
         }
@@ -999,10 +1356,32 @@ struct CollectionActionMenuItems: View {
         }
     }
 
+    private var groupMenu: some View {
+        Menu("Group") {
+            Picker("", selection: groupSelection) {
+                ForEach(model.collectionGroupSummaries) { group in
+                    Text(model.collectionGroupDisplayName(group.name))
+                        .tag(group.name)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.inline)
+
+            Divider()
+
+            Button("Add to a New Group") {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    _ = model.createCollectionGroupAndMoveCollectionForEditing(collection)
+                }
+            }
+        }
+    }
+
     private var deleteButton: some View {
         Button("Delete Collection", role: .destructive) {
             model.requestDeleteCollection(collection)
         }
+        .disabled(model.isDefaultCollection(collection))
     }
 
     private var cliCommand: String {
@@ -1033,6 +1412,24 @@ struct CollectionActionMenuItems: View {
             model.canBulkChangeStatuses(in: collection)
         case .visibleItems:
             model.canBulkChangeVisibleStatuses
+        }
+    }
+
+    private var currentGroupName: String? {
+        collection.groupName
+    }
+
+    private var groupSelection: Binding<String> {
+        Binding {
+            currentGroupName ?? TaskStore.defaultCollectionGroup
+        } set: { group in
+            guard group != currentGroupName else {
+                return
+            }
+
+            withAnimation(.easeInOut(duration: 0.18)) {
+                model.moveCollection(collection, toGroup: group)
+            }
         }
     }
 

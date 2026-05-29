@@ -49,7 +49,7 @@ struct SettingsView: View {
                                         Image(systemName: "doc.on.doc")
                                     }
                                     .buttonStyle(.borderless)
-                                    .help("Copy PATH command")
+                                    .help("Copy PATH Command")
                                 }
                             }
                         }
@@ -68,7 +68,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("App Default Prompt") {
+                Section("Default App Prompt") {
                     VStack(alignment: .leading, spacing: 8) {
                         PromptTemplateEditor(
                             text: $defaultPromptTemplate,

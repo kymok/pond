@@ -23,6 +23,8 @@ struct TaskRow: View {
     let moveItem: (TaskItem, TaskFocusDirection) -> Bool
     let deleteAndFocusPrevious: (TaskItem) -> Void
     let deleteEmptyAndMoveFocusDown: (TaskItem, TaskFocusSelectionBehavior) -> Bool
+    let mergeWithPrevious: (TaskItem, String) -> Bool
+    let splitTitle: (TaskItem, String, String) -> Bool
 
     @State private var autosaveTask: Task<Void, Never>?
     @State private var noteAutosaveTask: Task<Void, Never>?
@@ -55,7 +57,9 @@ struct TaskRow: View {
         moveFocus: @escaping (TaskItem, TaskFocusDirection, TaskFocusSelectionBehavior) -> Bool,
         moveItem: @escaping (TaskItem, TaskFocusDirection) -> Bool,
         deleteAndFocusPrevious: @escaping (TaskItem) -> Void,
-        deleteEmptyAndMoveFocusDown: @escaping (TaskItem, TaskFocusSelectionBehavior) -> Bool
+        deleteEmptyAndMoveFocusDown: @escaping (TaskItem, TaskFocusSelectionBehavior) -> Bool,
+        mergeWithPrevious: @escaping (TaskItem, String) -> Bool,
+        splitTitle: @escaping (TaskItem, String, String) -> Bool
     ) {
         self.item = item
         self.isPendingDraft = isPendingDraft
@@ -75,6 +79,8 @@ struct TaskRow: View {
         self.moveItem = moveItem
         self.deleteAndFocusPrevious = deleteAndFocusPrevious
         self.deleteEmptyAndMoveFocusDown = deleteEmptyAndMoveFocusDown
+        self.mergeWithPrevious = mergeWithPrevious
+        self.splitTitle = splitTitle
         _title = State(initialValue: activeTitle ?? item.title)
     }
 
@@ -120,6 +126,11 @@ struct TaskRow: View {
                         }
                     }
 
+                    Menu("Collection") {
+                        collectionMenuItems
+                    }
+                    .disabled(!canEditTitleAndCollection)
+
                     Section("Item") {
                         Button(item.notes.isEmpty ? "Add Note" : "Edit Note") {
                             beginAddingNote()
@@ -137,7 +148,7 @@ struct TaskRow: View {
                     itemMenuIcon
                 }
                 .buttonStyle(.plain)
-                .help("Task status")
+                .help("Task Status")
                 .alignmentGuide(.top) { dimensions in
                     dimensions[VerticalAlignment.center] - TaskRowLayout.titleFirstLineCenterY
                 }
@@ -487,9 +498,9 @@ struct TaskRow: View {
         }
     }
 
-    private func saveNoteIfNeeded(allowsEmptyRemoval: Bool) {
+    private func saveNoteIfNeeded(allowsEmptyRemoval: Bool, preservesFocus: Bool = true) {
         guard let note = item.notes.first else {
-            saveDraftNoteIfNeeded(allowsEmptyRemoval: allowsEmptyRemoval)
+            saveDraftNoteIfNeeded(allowsEmptyRemoval: allowsEmptyRemoval, preservesFocus: preservesFocus)
             return
         }
 
@@ -517,7 +528,7 @@ struct TaskRow: View {
         }
     }
 
-    private func saveDraftNoteIfNeeded(allowsEmptyRemoval: Bool) {
+    private func saveDraftNoteIfNeeded(allowsEmptyRemoval: Bool, preservesFocus: Bool) {
         let body = draftNoteBody ?? ""
         let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         let focusSelectionBehavior = focusedNoteSelectionBehavior()
@@ -544,7 +555,8 @@ struct TaskRow: View {
             return updatedItem
         }
 
-        if focusedField.wrappedValue == .note(item.id),
+        if preservesFocus,
+           focusedField.wrappedValue == .note(item.id),
            updatedItem?.notes.first != nil {
             if let focusSelectionBehavior {
                 DispatchQueue.main.async {
@@ -709,11 +721,21 @@ struct TaskRow: View {
     }
 
     private func handleTitleCommand(_ commandSelector: Selector, textView: NSTextView, event: NSEvent?) -> Bool {
-        guard shouldHandlePlainReturnCommand(commandSelector, textView: textView, event: event) else {
+        guard commandSelector.isNewlineInsertionCommand,
+              let event,
+              !textView.hasMarkedText() else {
             return false
         }
 
-        return handleTitleReturn(textView)
+        if event.isCommandReturnKey {
+            return handleTitleReturn(textView)
+        }
+
+        guard event.isPlainReturnKey else {
+            return false
+        }
+
+        return handlePlainTitleReturn(textView)
     }
 
     private func handleCollectionKeyDown(_ event: NSEvent, fieldEditor: NSTextView) -> Bool {
@@ -905,12 +927,12 @@ struct TaskRow: View {
         }
 
         let selectedRange = fieldEditor.selectedRange()
-        guard fieldEditor.string.isEmpty && selectedRange.location == 0 && selectedRange.length == 0 else {
+        guard selectedRange.location == 0 && selectedRange.length == 0 else {
             return false
         }
 
-        deleteAndFocusPrevious(item)
-        return true
+        syncTitleFocusAndText(from: fieldEditor)
+        return mergeWithPrevious(item, fieldEditor.string)
     }
 
     private func handleTitleReturn(_ textView: NSTextView) -> Bool {
@@ -920,6 +942,56 @@ struct TaskRow: View {
             selectionBehavior: .moveInsertionPointToEnd,
             confirmsTitle: true
         )
+    }
+
+    private func handlePlainTitleReturn(_ textView: NSTextView) -> Bool {
+        syncTitleFocusAndText(from: textView)
+        let currentTitle = textView.string
+        let selectedRange = textView.selectedRange().clamped(to: currentTitle)
+        let length = (currentTitle as NSString).length
+
+        if NSMaxRange(selectedRange) >= length {
+            let titleBeforeSelection = (currentTitle as NSString).substring(to: selectedRange.location)
+            return createItemBelowFromTitle(textView, title: titleBeforeSelection)
+        }
+
+        guard selectedRange.location > 0 else {
+            return true
+        }
+
+        let firstTitle = (currentTitle as NSString).substring(to: selectedRange.location)
+        let secondTitle = (currentTitle as NSString).substring(from: NSMaxRange(selectedRange))
+        guard !firstTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !secondTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return true
+        }
+
+        prepareFocusTransition(from: textView)
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        return splitTitle(item, firstTitle, secondTitle)
+    }
+
+    private func createItemBelowFromTitle(_ textView: NSTextView, title currentTitle: String) -> Bool {
+        guard focusedField.wrappedValue == .title(item.id) else {
+            return false
+        }
+
+        if currentTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return deleteEmptyAndMoveFocusDown(item, .moveInsertionPointToEnd)
+        }
+
+        prepareFocusTransition(from: textView)
+        cancelAutosave()
+        skipsNextFocusLossSave = true
+        if !isPendingDraft {
+            endCurrentTitleEdit(textView)
+        }
+        insertDraftBelow(item, currentTitle)
+        if isPendingDraft {
+            resetTitleEditorForNextDraft(textView)
+        }
+        return true
     }
 
     private func resetTitleEditorForNextDraft(_ textView: NSTextView) {
@@ -1005,7 +1077,7 @@ struct TaskRow: View {
     ) -> Bool {
         syncNoteFocusAndText(from: textView)
         prepareFocusTransition(from: textView)
-        saveNoteIfNeeded(allowsEmptyRemoval: true)
+        saveNoteIfNeeded(allowsEmptyRemoval: true, preservesFocus: false)
         if moveFocus(item, .down, selectionBehavior) {
             return true
         }
@@ -1196,19 +1268,10 @@ struct TaskRow: View {
                 }
         } else {
             Menu {
-                ForEach(model.collectionNames, id: \.self) { collection in
-                    Button {
-                        moveToCollection(collection)
-                        if isEmptyTitle {
-                            focusTitle()
-                        }
-                    } label: {
-                        collectionLabel(collection)
-                    }
-                }
+                collectionMenuItems
 
                 Divider()
-                Button("Create New...") {
+                Button("Create New Collection…") {
                     beginCreatingCollection()
                 }
             } label: {
@@ -1233,11 +1296,30 @@ struct TaskRow: View {
         }
     }
 
-    private func collectionLabel(_ collection: String) -> some View {
+    @ViewBuilder
+    private var collectionMenuItems: some View {
+        ForEach(model.editableCollectionGroups) { group in
+            Section(model.collectionGroupDisplayName(group.name)) {
+                ForEach(group.collections) { collection in
+                    Button {
+                        moveToCollection(collection.name)
+                        if isEmptyTitle {
+                            focusTitle()
+                        }
+                    } label: {
+                        collectionLabel(collection)
+                    }
+                    .disabled(collection.name == item.collection)
+                }
+            }
+        }
+    }
+
+    private func collectionLabel(_ collection: TaskCollectionSummary) -> some View {
         Label {
-            Text(collection)
+            Text(collection.displayName)
         } icon: {
-            collectionColorIcon(collection)
+            collectionColorIcon(collection.name)
         }
     }
 
@@ -1426,7 +1508,13 @@ private struct TaskTitleTextView: NSViewRepresentable {
         if isFocused && isEditable {
             focus(textView, selectionRequest: selectionBehavior)
         } else if textView.window?.firstResponder === textView {
-            textView.window?.makeFirstResponder(nil)
+            DispatchQueue.main.async {
+                guard !self.isFocused, textView.window?.firstResponder === textView else {
+                    return
+                }
+
+                textView.window?.makeFirstResponder(nil)
+            }
         }
     }
 
@@ -1440,18 +1528,16 @@ private struct TaskTitleTextView: NSViewRepresentable {
     }
 
     private func focus(_ textView: SelfSizingTextView, selectionRequest: TaskFocusSelectionRequest?) {
-        if let window = textView.window {
+        DispatchQueue.main.async {
+            guard self.isFocused, self.isEditable, let window = textView.window else {
+                return
+            }
+
             if window.firstResponder !== textView {
                 window.makeFirstResponder(textView)
             }
-            applySelectionIfNeeded(to: textView, selectionRequest: selectionRequest)
-        } else {
-            DispatchQueue.main.async {
-                if self.isFocused {
-                    textView.window?.makeFirstResponder(textView)
-                    self.applySelectionIfNeeded(to: textView, selectionRequest: selectionRequest)
-                }
-            }
+
+            self.applySelectionIfNeeded(to: textView, selectionRequest: selectionRequest)
         }
     }
 

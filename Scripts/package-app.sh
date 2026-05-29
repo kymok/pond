@@ -5,6 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Pond"
 EXECUTABLE_NAME="Pond"
 CLI_NAME="taskpond"
+PROJECT_PATH="$ROOT_DIR/Pond.xcodeproj"
+SCHEME_NAME="Pond"
+CONFIGURATION="Release"
+BUILD_PRODUCTS_DIR="$ROOT_DIR/tmp/XcodeBuild/$CONFIGURATION"
+DERIVED_DATA_DIR="$ROOT_DIR/tmp/DerivedData"
 APP_DIR="$ROOT_DIR/dist/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -167,20 +172,27 @@ quit_running_app() {
   pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
 }
 
-quit_running_app
-swift build -c release --package-path "$ROOT_DIR"
+xcodebuild_args=(
+  -project "$PROJECT_PATH"
+  -scheme "$SCHEME_NAME"
+  -configuration "$CONFIGURATION"
+  -derivedDataPath "$DERIVED_DATA_DIR"
+  CONFIGURATION_BUILD_DIR="$BUILD_PRODUCTS_DIR"
+  CODE_SIGNING_ALLOWED=NO
+)
 
 rm -rf "$APP_DIR"
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$HELPERS_DIR"
+mkdir -p "$ROOT_DIR/dist"
 
-cp "$ROOT_DIR/Packaging/Info.plist" "$CONTENTS_DIR/Info.plist"
 if [[ -n "$MARKETING_VERSION" ]]; then
-  /usr/bin/plutil -replace CFBundleShortVersionString -string "$MARKETING_VERSION" "$CONTENTS_DIR/Info.plist"
-  /usr/bin/plutil -replace CFBundleVersion -string "$BUILD_VERSION" "$CONTENTS_DIR/Info.plist"
+  xcodebuild_args+=(
+    MARKETING_VERSION="$MARKETING_VERSION"
+    CURRENT_PROJECT_VERSION="$BUILD_VERSION"
+  )
 fi
 
-cp "$ROOT_DIR/.build/release/$EXECUTABLE_NAME" "$MACOS_DIR/$EXECUTABLE_NAME"
-cp "$ROOT_DIR/.build/release/$CLI_NAME" "$HELPERS_DIR/$CLI_NAME"
+xcodebuild "${xcodebuild_args[@]}" build
+ditto "$BUILD_PRODUCTS_DIR/$APP_NAME.app" "$APP_DIR"
 
 install_app_icon
 
@@ -189,5 +201,7 @@ chmod 755 "$MACOS_DIR/$EXECUTABLE_NAME" "$HELPERS_DIR/$CLI_NAME"
 if [[ "${PACKAGE_APP_SKIP_AD_HOC_SIGN:-0}" != "1" ]] && command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign - "$APP_DIR"
 fi
+
+quit_running_app
 
 echo "$APP_DIR"

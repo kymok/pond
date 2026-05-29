@@ -7,7 +7,7 @@ A small macOS task app with a shared command line interface.
 ## Build
 
 ```sh
-swift build
+xcodebuild -project Pond.xcodeproj -scheme Pond -configuration Debug build
 ```
 
 To create the macOS app bundle:
@@ -45,13 +45,16 @@ taskpond collection clear <name> [--completed]
 `taskpond item update --status` requires one status: `ready`, `draft`, `in-progress`, `completed`, `on-hold`, or `aborted`.
 `taskpond item update` changes an existing item in place without changing its id.
 Successful non-help CLI commands write JSON to standard output. Item output includes `id`, `status`, `collection`, and `title`.
+Collections outside `No Group` are addressed as `<group>/<collection>`.
+The default GUI collection `Inbox` is addressed as `DefaultCollection` in CLI/API output; `Inbox` is still accepted as a legacy alias.
 
 Examples:
 
 ```sh
-taskpond item create --collection Inbox "Buy milk"
+taskpond item create --collection DefaultCollection "Buy milk"
+taskpond item create --collection Projects/Work "Draft proposal"
 taskpond item get
-taskpond item get -s ready -c Inbox
+taskpond item get -s ready -c DefaultCollection
 taskpond item update 1a2b3c4d --collection Errands -s ready "Buy oat milk"
 taskpond item update 1a2b3c4d --status completed
 taskpond item update 1a2b3c4d --status draft
@@ -59,7 +62,7 @@ taskpond item update 1a2b3c4d --status in-progress
 taskpond item update 1a2b3c4d --status on-hold
 taskpond item update 1a2b3c4d --status aborted
 taskpond item delete 1a2b3c4d
-taskpond item delete --collection Inbox
+taskpond item delete --collection DefaultCollection
 taskpond collection list
 taskpond collection create Errands
 taskpond collection rename Errands Personal

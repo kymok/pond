@@ -64,7 +64,7 @@ submit_for_notarization() {
 }
 
 require_tool git
-require_tool swift
+require_tool xcodebuild
 require_tool codesign
 require_tool ditto
 require_tool shasum

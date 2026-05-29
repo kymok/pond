@@ -65,7 +65,12 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(try store.items(status: .draft).map(\.id), [item.id])
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TaskCollectionSummary(name: "Inbox", totalCount: 1, incompleteCount: 1)]
+            [TaskCollectionSummary(
+                name: TaskStore.defaultCollection,
+                displayName: "Inbox",
+                totalCount: 1,
+                incompleteCount: 1
+            )]
         )
 
         let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
@@ -253,6 +258,363 @@ final class TaskStoreTests: XCTestCase {
         )
     }
 
+    func testLegacyStoreMigratesCollectionsIntoDefaultGroup() throws {
+        let store = makeStore()
+        try writeLegacyStore(
+            items: [
+                LegacyTaskItem(
+                    id: "feedbeef",
+                    title: "One",
+                    collection: "Legacy",
+                    isDone: false,
+                    isLocked: false,
+                    createdAt: Date(),
+                    updatedAt: Date()
+                )
+            ],
+            to: store.fileURL
+        )
+
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(
+                    name: TaskStore.defaultCollectionGroup,
+                    collections: [TaskCollectionSummary(name: "Legacy", totalCount: 1, incompleteCount: 1)]
+                )
+            ]
+        )
+
+        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertTrue(json.contains(#""collectionGroups""#))
+    }
+
+    func testStoredCollectionsGroupMigratesToDefaultGroup() throws {
+        let store = makeStore()
+        try writeStoreWithCollectionGroups(
+            groups: [
+                StoredCollectionGroup(name: "Collections", collections: ["Inbox"]),
+                StoredCollectionGroup(name: "Projects", collections: ["Work"])
+            ],
+            items: [
+                storedItem(id: "feedbeef", title: "Inbox task", collection: "Inbox"),
+                storedItem(id: "cafebabe", title: "Work task", collection: "Work")
+            ],
+            to: store.fileURL
+        )
+
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(
+                    name: TaskStore.defaultCollectionGroup,
+                    collections: [TaskCollectionSummary(
+                        name: TaskStore.defaultCollection,
+                        displayName: "Inbox",
+                        totalCount: 1,
+                        incompleteCount: 1
+                    )]
+                ),
+                TaskCollectionGroupSummary(
+                    name: "Projects",
+                    collections: [TaskCollectionSummary(
+                        name: "Projects/Work",
+                        displayName: "Work",
+                        groupName: "Projects",
+                        totalCount: 1,
+                        incompleteCount: 1
+                    )]
+                )
+            ]
+        )
+        XCTAssertEqual(try store.items().map(\.collection), [TaskStore.defaultCollection, "Projects/Work"])
+
+        let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
+        XCTAssertTrue(json.contains(#""name" : "DefaultGroup""#))
+        XCTAssertFalse(json.contains(#""name" : "Collections""#))
+    }
+
+    func testDefaultGroupAPINameAndProtection() throws {
+        let store = makeStore()
+
+        try store.createCollection(name: "Inbox", group: TaskStore.defaultCollectionGroup)
+
+        XCTAssertEqual(try store.collectionSummaries().map(\.name), [TaskStore.defaultCollection])
+        XCTAssertThrowsError(
+            try store.renameCollectionGroup(from: TaskStore.defaultCollectionGroup, to: "Projects")
+        ) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollectionGroup)
+        }
+        XCTAssertThrowsError(try store.deleteCollectionGroup(name: TaskStore.defaultCollectionGroup)) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollectionGroup)
+        }
+    }
+
+    func testDefaultCollectionAliasAndProtection() throws {
+        let store = makeStore()
+        let item = try store.add(title: "One", collection: "Inbox")
+
+        XCTAssertEqual(item.collection, TaskStore.defaultCollection)
+        XCTAssertEqual(try store.items(collection: "Inbox").map(\.id), [item.id])
+        XCTAssertEqual(try store.items(collection: TaskStore.defaultCollection).map(\.id), [item.id])
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [TaskCollectionSummary(
+                name: TaskStore.defaultCollection,
+                displayName: "Inbox",
+                totalCount: 1,
+                incompleteCount: 1
+            )]
+        )
+        XCTAssertThrowsError(try store.renameCollection(from: "Inbox", to: "Personal")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollection)
+        }
+        XCTAssertThrowsError(try store.deleteEmptyCollection(name: "Inbox")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollection)
+        }
+        XCTAssertThrowsError(try store.deleteCollection(name: "Inbox")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollection)
+        }
+        XCTAssertThrowsError(try store.moveCollection(name: "Inbox", toGroup: "Projects")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .defaultCollection)
+        }
+        XCTAssertEqual(try store.items().map(\.collection), [TaskStore.defaultCollection])
+    }
+
+    func testCollectionCanBeCreatedInGroup() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(name: TaskStore.defaultCollectionGroup),
+                TaskCollectionGroupSummary(
+                    name: "Projects",
+                    collections: [TaskCollectionSummary(
+                        name: "Projects/Work",
+                        displayName: "Work",
+                        groupName: "Projects",
+                        totalCount: 0,
+                        incompleteCount: 0
+                    )]
+                )
+            ]
+        )
+        XCTAssertEqual(
+            try store.collectionSummaries(),
+            [TaskCollectionSummary(
+                name: "Projects/Work",
+                displayName: "Work",
+                groupName: "Projects",
+                totalCount: 0,
+                incompleteCount: 0
+            )]
+        )
+    }
+
+    func testMovingCollectionPreservesEmptyGroup() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+        try store.moveCollection(name: "Projects/Work", toGroup: TaskStore.defaultCollectionGroup)
+
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(
+                    name: TaskStore.defaultCollectionGroup,
+                    collections: [TaskCollectionSummary(name: "Work", totalCount: 0, incompleteCount: 0)]
+                ),
+                TaskCollectionGroupSummary(name: "Projects")
+            ]
+        )
+    }
+
+    func testCollectionMetadataChangesPreserveGroup() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+        try store.setCollectionColor(name: "Projects/Work", color: .blue)
+
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(name: TaskStore.defaultCollectionGroup),
+                TaskCollectionGroupSummary(
+                    name: "Projects",
+                    collections: [TaskCollectionSummary(
+                        name: "Projects/Work",
+                        displayName: "Work",
+                        groupName: "Projects",
+                        totalCount: 0,
+                        incompleteCount: 0,
+                        color: .blue
+                    )]
+                )
+            ]
+        )
+    }
+
+    func testRenameCollectionPreservesGroup() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+        try store.renameCollection(from: "Projects/Work", to: "Personal")
+
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(name: TaskStore.defaultCollectionGroup),
+                TaskCollectionGroupSummary(
+                    name: "Projects",
+                    collections: [TaskCollectionSummary(
+                        name: "Projects/Personal",
+                        displayName: "Personal",
+                        groupName: "Projects",
+                        totalCount: 0,
+                        incompleteCount: 0
+                    )]
+                )
+            ]
+        )
+    }
+
+    func testDeletingGroupMovesCollectionsToDefaultGroup() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+
+        XCTAssertTrue(try store.deleteCollectionGroup(name: "Projects"))
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(
+                    name: TaskStore.defaultCollectionGroup,
+                    collections: [TaskCollectionSummary(name: "Work", totalCount: 0, incompleteCount: 0)]
+                )
+            ]
+        )
+    }
+
+    func testCollectionsCanShareDisplayNameAcrossGroups() throws {
+        let store = makeStore()
+
+        try store.createCollection(name: "Work")
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+
+        XCTAssertEqual(
+            try store.collectionSummaries().map(\.name),
+            ["Projects/Work", "Work"]
+        )
+        XCTAssertEqual(
+            try store.collectionGroupSummaries(),
+            [
+                TaskCollectionGroupSummary(
+                    name: TaskStore.defaultCollectionGroup,
+                    collections: [TaskCollectionSummary(
+                        name: "Work",
+                        displayName: "Work",
+                        groupName: TaskStore.defaultCollectionGroup,
+                        totalCount: 0,
+                        incompleteCount: 0
+                    )]
+                ),
+                TaskCollectionGroupSummary(
+                    name: "Projects",
+                    collections: [TaskCollectionSummary(
+                        name: "Projects/Work",
+                        displayName: "Work",
+                        groupName: "Projects",
+                        totalCount: 0,
+                        incompleteCount: 0
+                    )]
+                )
+            ]
+        )
+    }
+
+    func testMovingCollectionRejectsDestinationDisplayNameConflict() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollectionGroup(name: "Personal")
+        try store.createCollection(name: "Work", group: "Projects")
+        try store.createCollection(name: "Work", group: "Personal")
+
+        XCTAssertThrowsError(try store.moveCollection(name: "Projects/Work", toGroup: "Personal")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .collectionConflict("Personal/Work"))
+        }
+        XCTAssertEqual(try store.collectionSummaries().map(\.name), ["Personal/Work", "Projects/Work"])
+    }
+
+    func testMovingCollectionRenamesAPINameAndPreservesMetadata() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        let item = try store.add(title: "One", collection: "Work")
+        try store.setCollectionColor(name: "Work", color: .blue)
+        try store.setCollectionPrompt(name: "Work", promptTemplate: "Prompt")
+        try store.setCollectionArchived(name: "Work", isArchived: true)
+
+        let moved = try store.moveCollection(name: "Work", toGroup: "Projects")
+
+        XCTAssertEqual(moved.name, "Projects/Work")
+        XCTAssertEqual(moved.displayName, "Work")
+        XCTAssertEqual(moved.groupName, "Projects")
+        XCTAssertEqual(moved.color, .blue)
+        XCTAssertEqual(moved.promptTemplate, "Prompt")
+        XCTAssertTrue(moved.isArchived)
+        XCTAssertEqual(try store.items(ids: [item.id]).map(\.collection), ["Projects/Work"])
+    }
+
+    func testRenameCollectionRejectsDisplayNameConflictInTargetGroup() throws {
+        let store = makeStore()
+
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollection(name: "Work", group: "Projects")
+        try store.createCollection(name: "Home", group: "Projects")
+
+        XCTAssertThrowsError(try store.renameCollection(from: "Projects/Work", to: "Home")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .collectionConflict("Projects/Home"))
+        }
+    }
+
+    func testGroupRenameAndDeleteRejectDisplayNameConflicts() throws {
+        let store = makeStore()
+
+        try store.createCollection(name: "Work")
+        try store.createCollectionGroup(name: "Projects")
+        try store.createCollectionGroup(name: "Personal")
+        try store.createCollection(name: "Work", group: "Projects")
+        try store.createCollection(name: "Work", group: "Personal")
+
+        XCTAssertThrowsError(try store.renameCollectionGroup(from: "Projects", to: "Personal")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .collectionConflict("Personal/Work"))
+        }
+        XCTAssertThrowsError(try store.deleteCollectionGroup(name: "Projects")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .collectionConflict("Work"))
+        }
+    }
+
+    func testSlashIsRejectedInGroupAndDisplayNames() throws {
+        let store = makeStore()
+
+        XCTAssertThrowsError(try store.createCollectionGroup(name: "Project/Archive")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollectionGroup)
+        }
+        XCTAssertThrowsError(try store.createCollection(name: "Project/Archive/Work")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
+        }
+    }
+
     func testCollectionColorIsPersisted() throws {
         let store = makeStore()
         try store.createCollection(name: "Personal")
@@ -271,10 +633,10 @@ final class TaskStoreTests: XCTestCase {
 
     func testRenameCollectionCarriesColor() throws {
         let store = makeStore()
-        try store.createCollection(name: "Inbox")
-        try store.setCollectionColor(name: "Inbox", color: .green)
+        try store.createCollection(name: "Work")
+        try store.setCollectionColor(name: "Work", color: .green)
 
-        try store.renameCollection(from: "Inbox", to: "Personal")
+        try store.renameCollection(from: "Work", to: "Personal")
 
         XCTAssertEqual(
             try store.collectionSummaries(),
@@ -291,7 +653,13 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertTrue(archived.isArchived)
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TaskCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0, isArchived: true)]
+            [TaskCollectionSummary(
+                name: TaskStore.defaultCollection,
+                displayName: "Inbox",
+                totalCount: 0,
+                incompleteCount: 0,
+                isArchived: true
+            )]
         )
 
         let reloadedStore = TaskStore(fileURL: store.fileURL)
@@ -304,10 +672,10 @@ final class TaskStoreTests: XCTestCase {
 
     func testRenameCollectionCarriesArchiveStatus() throws {
         let store = makeStore()
-        try store.createCollection(name: "Inbox")
-        try store.setCollectionArchived(name: "Inbox", isArchived: true)
+        try store.createCollection(name: "Work")
+        try store.setCollectionArchived(name: "Work", isArchived: true)
 
-        try store.renameCollection(from: "Inbox", to: "Personal")
+        try store.renameCollection(from: "Work", to: "Personal")
 
         XCTAssertEqual(
             try store.collectionSummaries(),
@@ -329,7 +697,8 @@ final class TaskStoreTests: XCTestCase {
             try store.collectionSummaries(),
             [
                 TaskCollectionSummary(
-                    name: "Inbox",
+                    name: TaskStore.defaultCollection,
+                    displayName: "Inbox",
                     totalCount: 0,
                     incompleteCount: 0,
                     promptTemplate: "Run {{cliCommand}} for {{collectionName}}."
@@ -345,7 +714,7 @@ final class TaskStoreTests: XCTestCase {
 
         let json = try XCTUnwrap(String(data: Data(contentsOf: store.fileURL), encoding: .utf8))
         XCTAssertTrue(json.contains(#""collectionPrompts""#))
-        XCTAssertTrue(json.contains(#""Inbox" : "Run {{cliCommand}} for {{collectionName}}.""#))
+        XCTAssertTrue(json.contains(#""DefaultCollection" : "Run {{cliCommand}} for {{collectionName}}.""#))
     }
 
     func testBlankCollectionPromptRemovesOverride() throws {
@@ -362,12 +731,12 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertFalse(json.contains("Custom"))
     }
 
-    func testRenameCollectionCarriesPromptUnlessTargetHasPrompt() throws {
+    func testRenameCollectionCarriesPromptAndRejectsTargetPromptConflict() throws {
         let store = makeStore()
-        try store.createCollection(name: "Inbox")
-        try store.setCollectionPrompt(name: "Inbox", promptTemplate: "Inbox Prompt")
+        try store.createCollection(name: "Work")
+        try store.setCollectionPrompt(name: "Work", promptTemplate: "Work Prompt")
 
-        try store.renameCollection(from: "Inbox", to: "Personal")
+        try store.renameCollection(from: "Work", to: "Personal")
 
         XCTAssertEqual(
             try store.collectionSummaries(),
@@ -376,18 +745,26 @@ final class TaskStoreTests: XCTestCase {
                     name: "Personal",
                     totalCount: 0,
                     incompleteCount: 0,
-                    promptTemplate: "Inbox Prompt"
+                    promptTemplate: "Work Prompt"
                 )
             ]
         )
 
         try store.createCollection(name: "Work")
         try store.setCollectionPrompt(name: "Work", promptTemplate: "Work Prompt")
-        try store.renameCollection(from: "Personal", to: "Work")
+        XCTAssertThrowsError(try store.renameCollection(from: "Personal", to: "Work")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .collectionConflict("Work"))
+        }
 
         XCTAssertEqual(
             try store.collectionSummaries(),
             [
+                TaskCollectionSummary(
+                    name: "Personal",
+                    totalCount: 0,
+                    incompleteCount: 0,
+                    promptTemplate: "Work Prompt"
+                ),
                 TaskCollectionSummary(
                     name: "Work",
                     totalCount: 0,
@@ -476,7 +853,7 @@ final class TaskStoreTests: XCTestCase {
 
         let summaries = Dictionary(uniqueKeysWithValues: try store.collectionSummaries().map { ($0.name, $0) })
 
-        XCTAssertEqual(summaries["Inbox"]?.statusIndicator, .onHold)
+        XCTAssertEqual(summaries[TaskStore.defaultCollection]?.statusIndicator, .onHold)
         XCTAssertEqual(summaries["Work"]?.statusIndicator, .aborted)
     }
 
@@ -519,9 +896,9 @@ final class TaskStoreTests: XCTestCase {
 
     func testRenameCollectionMovesItems() throws {
         let store = makeStore()
-        let item = try store.add(title: "One", collection: "Inbox")
+        let item = try store.add(title: "One", collection: "Work")
 
-        try store.renameCollection(from: "Inbox", to: "Database")
+        try store.renameCollection(from: "Work", to: "Database")
 
         let current = try XCTUnwrap(try store.items(ids: [item.id]).first)
         XCTAssertEqual(current.collection, "Database")
@@ -531,17 +908,22 @@ final class TaskStoreTests: XCTestCase {
         )
     }
 
-    func testRenameCollectionMergesExistingCollection() throws {
+    func testRenameCollectionRejectsExistingCollection() throws {
         let store = makeStore()
-        _ = try store.add(title: "One", collection: "Inbox")
+        _ = try store.add(title: "One", collection: "Personal")
         _ = try store.add(title: "Two", collection: "Work")
 
-        try store.renameCollection(from: "Inbox", to: "Work")
+        XCTAssertThrowsError(try store.renameCollection(from: "Personal", to: "Work")) { error in
+            XCTAssertEqual(error as? TaskStoreError, .collectionConflict("Work"))
+        }
 
-        XCTAssertEqual(Set(try store.items().map(\.collection)), ["Work"])
+        XCTAssertEqual(Set(try store.items().map(\.collection)), ["Personal", "Work"])
         XCTAssertEqual(
             try store.collectionSummaries(),
-            [TaskCollectionSummary(name: "Work", totalCount: 2, incompleteCount: 2)]
+            [
+                TaskCollectionSummary(name: "Personal", totalCount: 1, incompleteCount: 1),
+                TaskCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
+            ]
         )
     }
 
@@ -551,17 +933,22 @@ final class TaskStoreTests: XCTestCase {
         let work = try store.add(title: "Two", collection: "Work")
         try store.createCollection(name: "Empty")
 
-        let deleted = try store.deleteCollection(name: "Inbox")
+        let deleted = try store.deleteCollection(name: "Work")
 
         XCTAssertTrue(deleted)
         let remainingItems = try store.items()
-        XCTAssertEqual(remainingItems.map(\.id), [work.id])
-        XCTAssertFalse(remainingItems.contains { $0.id == inbox.id })
+        XCTAssertEqual(remainingItems.map(\.id), [inbox.id])
+        XCTAssertFalse(remainingItems.contains { $0.id == work.id })
         XCTAssertEqual(
             try store.collectionSummaries(),
             [
+                TaskCollectionSummary(
+                    name: TaskStore.defaultCollection,
+                    displayName: "Inbox",
+                    totalCount: 1,
+                    incompleteCount: 1
+                ),
                 TaskCollectionSummary(name: "Empty", totalCount: 0, incompleteCount: 0),
-                TaskCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
             ]
         )
     }
@@ -586,12 +973,12 @@ final class TaskStoreTests: XCTestCase {
 
     func testEmptyCollectionNamesAreRejected() throws {
         let store = makeStore()
-        try store.createCollection(name: "Inbox")
+        try store.createCollection(name: "Work")
 
         XCTAssertThrowsError(try store.createCollection(name: "   ")) { error in
             XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
-        XCTAssertThrowsError(try store.renameCollection(from: "Inbox", to: "\n")) { error in
+        XCTAssertThrowsError(try store.renameCollection(from: "Work", to: "\n")) { error in
             XCTAssertEqual(error as? TaskStoreError, .invalidCollection)
         }
         XCTAssertThrowsError(try store.deleteCollection(name: " ")) { error in
@@ -645,7 +1032,12 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(
             try store.collectionSummaries(),
             [
-                TaskCollectionSummary(name: "Inbox", totalCount: 0, incompleteCount: 0),
+                TaskCollectionSummary(
+                    name: TaskStore.defaultCollection,
+                    displayName: "Inbox",
+                    totalCount: 0,
+                    incompleteCount: 0
+                ),
                 TaskCollectionSummary(name: "Work", totalCount: 1, incompleteCount: 1)
             ]
         )
@@ -690,6 +1082,52 @@ final class TaskStoreTests: XCTestCase {
         try store.reorder(id: third.id, after: second.id, before: nil)
 
         XCTAssertEqual(try store.items().map(\.id), [first.id, second.id, third.id])
+    }
+
+    func testSplitItemMovesNoteToSecondItemAndReadiesDraftFirstItem() throws {
+        let store = makeStore()
+        let item = try store.add(title: "One Two", id: "11111111", status: .draft)
+        try store.addNote(id: item.id, body: "Keep this")
+
+        let second = try store.splitItem(
+            id: item.id,
+            firstTitle: "One",
+            secondTitle: "Two",
+            secondID: "22222222"
+        )
+
+        XCTAssertEqual(second.id, "22222222")
+        XCTAssertEqual(second.title, "Two")
+        XCTAssertEqual(second.status, .draft)
+        XCTAssertEqual(second.notes.map(\.body), ["Keep this"])
+        let items = try store.items()
+        XCTAssertEqual(items.map(\.id), ["11111111", "22222222"])
+        XCTAssertEqual(items.map(\.title), ["One", "Two"])
+        XCTAssertEqual(items.map(\.status), [.ready, .draft])
+        XCTAssertEqual(items.map { $0.notes.map(\.body) }, [[], ["Keep this"]])
+    }
+
+    func testMergeItemIntoPreviousPreservesCurrentNoteAndRejectsPreviousNote() throws {
+        let store = makeStore()
+        let previous = try store.add(title: "One ", id: "11111111", status: .ready)
+        let current = try store.add(title: "Two", id: "22222222", status: .draft)
+        try store.addNote(id: current.id, body: "Move this")
+
+        let merged = try XCTUnwrap(try store.mergeItem(
+            id: current.id,
+            intoPrevious: previous.id,
+            title: "Two"
+        ))
+
+        XCTAssertEqual(merged.title, "OneTwo")
+        XCTAssertEqual(merged.notes.map(\.body), ["Move this"])
+        XCTAssertEqual(try store.items().map(\.id), [previous.id])
+
+        let next = try store.add(title: "Three", id: "33333333", status: .draft)
+        try store.addNote(id: previous.id, body: "Blocks merge")
+
+        XCTAssertNil(try store.mergeItem(id: next.id, intoPrevious: previous.id, title: "Three"))
+        XCTAssertEqual(try store.items().map(\.id), [previous.id, next.id])
     }
 
     func testAddCanUseRequestedID() throws {
@@ -824,6 +1262,39 @@ final class TaskStoreTests: XCTestCase {
         try encoder.encode(file).write(to: fileURL)
     }
 
+    private func writeStoreWithCollectionGroups(
+        groups: [StoredCollectionGroup],
+        items: [StoredTaskItem],
+        to fileURL: URL
+    ) throws {
+        let file = StoredTaskFile(
+            collections: groups.flatMap(\.collections),
+            collectionGroups: groups,
+            items: items
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try encoder.encode(file).write(to: fileURL)
+    }
+
+    private func storedItem(id: String, title: String, collection: String) -> StoredTaskItem {
+        StoredTaskItem(
+            id: id,
+            version: "abcdefghijkl",
+            title: title,
+            collection: collection,
+            status: "ready",
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+    }
+
     private struct LegacyTaskFile: Encodable {
         var version: Int
         var items: [LegacyTaskItem]
@@ -835,6 +1306,31 @@ final class TaskStoreTests: XCTestCase {
         var collection: String
         var isDone: Bool
         var isLocked: Bool
+        var createdAt: Date
+        var updatedAt: Date
+    }
+
+    private struct StoredTaskFile: Encodable {
+        var version = 6
+        var collections: [String]
+        var collectionGroups: [StoredCollectionGroup]
+        var collectionColors: [String: String] = [:]
+        var collectionPrompts: [String: String] = [:]
+        var archivedCollections: [String] = []
+        var items: [StoredTaskItem]
+    }
+
+    private struct StoredCollectionGroup: Encodable {
+        var name: String
+        var collections: [String]
+    }
+
+    private struct StoredTaskItem: Encodable {
+        var id: String
+        var version: String
+        var title: String
+        var collection: String
+        var status: String
         var createdAt: Date
         var updatedAt: Date
     }
