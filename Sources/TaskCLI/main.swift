@@ -392,15 +392,9 @@ private struct ArgumentScanner {
 
             switch argument {
             case "-s", "--status":
-                guard status == nil else {
-                    throw CLIError.duplicateStatus
-                }
-                status = try takeRequiredStatus()
+                try setStatusFlag(&status)
             case "--collection", "-c":
-                guard collection == nil else {
-                    throw CLIError.duplicateCollectionFlag
-                }
-                collection = try takeRequiredCollection()
+                try setCollectionFlag(&collection)
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -434,19 +428,9 @@ private struct ArgumentScanner {
                 titleParts.append(contentsOf: arguments)
                 arguments.removeAll()
             case "--collection", "-c":
-                guard collection == nil else {
-                    throw CLIError.duplicateCollectionFlag
-                }
-                guard let value = arguments.first else {
-                    throw CLIError.missingCollection
-                }
-                arguments.removeFirst()
-                collection = value
+                try setCollectionFlag(&collection)
             case "--status", "-s":
-                guard status == nil else {
-                    throw CLIError.duplicateStatus
-                }
-                status = try takeRequiredStatus()
+                try setStatusFlag(&status)
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -508,10 +492,7 @@ private struct ArgumentScanner {
                 titleParts.append(contentsOf: arguments)
                 arguments.removeAll()
             case "--collection", "-c":
-                guard collection == nil else {
-                    throw CLIError.duplicateCollectionFlag
-                }
-                collection = try takeRequiredCollection()
+                try setCollectionFlag(&collection)
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -536,10 +517,7 @@ private struct ArgumentScanner {
 
             switch argument {
             case "--collection", "-c":
-                guard collection == nil else {
-                    throw CLIError.duplicateCollectionFlag
-                }
-                collection = try takeRequiredCollection()
+                try setCollectionFlag(&collection)
             default:
                 if argument.hasPrefix("-") {
                     throw CLIError.unknownOption(argument)
@@ -659,6 +637,20 @@ private struct ArgumentScanner {
 
         arguments.removeFirst()
         return status
+    }
+
+    private mutating func setCollectionFlag(_ collection: inout String?) throws {
+        guard collection == nil else {
+            throw CLIError.duplicateCollectionFlag
+        }
+        collection = try takeRequiredCollection()
+    }
+
+    private mutating func setStatusFlag(_ status: inout TaskStatus?) throws {
+        guard status == nil else {
+            throw CLIError.duplicateStatus
+        }
+        status = try takeRequiredStatus()
     }
 
     private mutating func takeNoteFields(allowPartial: Bool) throws -> String? {
