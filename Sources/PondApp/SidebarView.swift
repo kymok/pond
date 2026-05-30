@@ -55,7 +55,6 @@ struct SidebarView: View {
     @State private var draggedSidebarCollection: String?
     @State private var draggedSidebarGroup: String?
     @State private var provisionalCollectionGroups: [TaskCollectionGroupSummary]?
-    @State private var sidebarDropHeight: CGFloat = 0
     @State private var collapsedGroups: Set<String> = []
     @State private var sidebarSelection = TaskAppModel.allCollectionID
 
@@ -140,22 +139,10 @@ struct SidebarView: View {
             .padding(.vertical, 8)
         }
         .contentShape(Rectangle())
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: SidebarDropHeightPreferenceKey.self,
-                    value: proxy.size.height
-                )
-            }
-        }
-        .onPreferenceChange(SidebarDropHeightPreferenceKey.self) { height in
-            sidebarDropHeight = height
-        }
         .onDrop(
             of: TaskItemDrag.acceptedTypes + SidebarCollectionDrag.acceptedTypes + SidebarGroupDrag.acceptedTypes,
             delegate: SidebarTaskDropCleanupDelegate(
                 groups: displayedCollectionGroups,
-                sidebarHeight: sidebarDropHeight,
                 dragState: taskDragState,
                 draggedCollection: $draggedSidebarCollection,
                 draggedGroup: $draggedSidebarGroup,
@@ -759,14 +746,6 @@ private struct SidebarGroupPlacement {
     let before: String?
 }
 
-private struct SidebarDropHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private func sidebarGroupOrderDescription(_ groups: [TaskCollectionGroupSummary]) -> String {
     groups.map(\.name).joined(separator: " > ")
 }
@@ -1304,7 +1283,6 @@ private struct SidebarGroupHeaderDropDelegate: DropDelegate {
 
 private struct SidebarTaskDropCleanupDelegate: DropDelegate {
     let groups: [TaskCollectionGroupSummary]
-    let sidebarHeight: CGFloat
     let dragState: TaskDragState
     @Binding var draggedCollection: String?
     @Binding var draggedGroup: String?
@@ -1395,7 +1373,7 @@ private struct SidebarTaskDropCleanupDelegate: DropDelegate {
 
         let edge = rootEdge(for: info.location) ?? "middle"
         sidebarDragLogger.debug(
-            "Group root drop entered \(edge, privacy: .public) source='\(source, privacy: .public)' y=\(info.location.y, privacy: .public) height=\(sidebarHeight, privacy: .public) order='\(sidebarGroupOrderDescription(movedGroups), privacy: .public)'"
+            "Group root drop entered \(edge, privacy: .public) source='\(source, privacy: .public)' y=\(info.location.y, privacy: .public) order='\(sidebarGroupOrderDescription(movedGroups), privacy: .public)'"
         )
         withAnimation(.easeInOut(duration: 0.18)) {
             provisionalGroups = movedGroups
@@ -1415,18 +1393,9 @@ private struct SidebarTaskDropCleanupDelegate: DropDelegate {
     }
 
     private func rootEdge(for location: CGPoint) -> String? {
-        if location.y <= sidebarRootGroupDropEdgeHeight {
-            return "top"
-        }
-
-        guard sidebarHeight > sidebarRootGroupDropEdgeHeight else {
-            return nil
-        }
-
-        if location.y >= sidebarHeight - sidebarRootGroupDropEdgeHeight {
-            return "bottom"
-        }
-
-        return nil
+        // A group dropped in the root area goes to the top only when released in
+        // the narrow band above the first group; anything lower (the empty space
+        // below the list) moves it to the bottom.
+        location.y <= sidebarRootGroupDropEdgeHeight ? "top" : "bottom"
     }
 }
