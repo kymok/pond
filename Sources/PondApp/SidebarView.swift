@@ -824,7 +824,8 @@ private func collectionPlacement(
 private func moveGroupInSidebarGroups(
     _ source: String,
     target: String,
-    groups: [TaskCollectionGroupSummary]
+    groups: [TaskCollectionGroupSummary],
+    insertAfter: Bool
 ) -> [TaskCollectionGroupSummary]? {
     guard source != TaskStore.defaultCollectionGroup,
           source != target,
@@ -836,7 +837,7 @@ private func moveGroupInSidebarGroups(
     var groups = groups
     let sourceGroup = groups.remove(at: sourceIndex)
     let currentTargetIndex = groups.firstIndex(where: { $0.name == target }) ?? targetIndex
-    let insertionIndex = sourceIndex < targetIndex ? currentTargetIndex + 1 : currentTargetIndex
+    let insertionIndex = insertAfter ? currentTargetIndex + 1 : currentTargetIndex
     groups.insert(sourceGroup, at: min(insertionIndex, groups.count))
     let orderedGroups = groups.filter { $0.name == TaskStore.defaultCollectionGroup }
         + groups.filter { $0.name != TaskStore.defaultCollectionGroup }
@@ -1040,7 +1041,8 @@ private struct SidebarCollectionDropDelegate: DropDelegate {
               let movedGroups = moveGroupInSidebarGroups(
                 source,
                 target: collection.groupName,
-                groups: groups
+                groups: provisionalGroups ?? groups,
+                insertAfter: true
               ) else {
             return
         }
@@ -1303,7 +1305,8 @@ private struct SidebarGroupHeaderDropDelegate: DropDelegate {
               let movedGroups = moveGroupInSidebarGroups(
                 source,
                 target: group.name,
-                groups: groups
+                groups: provisionalGroups ?? groups,
+                insertAfter: false
               ) else {
             return
         }
