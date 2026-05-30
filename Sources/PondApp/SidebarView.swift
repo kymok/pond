@@ -1363,13 +1363,11 @@ private struct SidebarTaskDropCleanupDelegate: DropDelegate {
             || info.hasItemsConforming(to: SidebarGroupDrag.acceptedTypes)
     }
 
-    func dropEntered(info: DropInfo) {
-        updateProvisionalGroupAtRootEdge(info: info)
-    }
-
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        updateProvisionalGroupAtRootEdge(info: info)
-        return DropProposal(operation: .move)
+        // The root area drives only the commit (see performGroupDrop); the live
+        // preview is owned by the header / collection-row delegates so dragging
+        // over the gaps between rows doesn't flicker the order to the bottom.
+        DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
@@ -1421,7 +1419,7 @@ private struct SidebarTaskDropCleanupDelegate: DropDelegate {
             return true
         }
 
-        let finalGroups = provisionalGroups ?? rootEdgeMovedGroups(for: source, location: info.location) ?? groups
+        let finalGroups = rootEdgeMovedGroups(for: source, location: info.location) ?? provisionalGroups ?? groups
         guard let placement = groupPlacement(for: source, in: finalGroups) else {
             sidebarDragLogger.info("Group root drop no-op source='\(source, privacy: .public)'")
             return true
@@ -1429,22 +1427,6 @@ private struct SidebarTaskDropCleanupDelegate: DropDelegate {
 
         sidebarDragLogger.info("Group root drop performing source='\(source, privacy: .public)'")
         return moveGroup(source, placement.after, placement.before)
-    }
-
-    private func updateProvisionalGroupAtRootEdge(info: DropInfo) {
-        guard info.hasItemsConforming(to: SidebarGroupDrag.acceptedTypes),
-              let source = draggedGroup,
-              let movedGroups = rootEdgeMovedGroups(for: source, location: info.location) else {
-            return
-        }
-
-        let edge = rootEdge(for: info.location) ?? "middle"
-        sidebarDragLogger.debug(
-            "Group root drop entered \(edge, privacy: .public) source='\(source, privacy: .public)' y=\(info.location.y, privacy: .public) order='\(sidebarGroupOrderDescription(movedGroups), privacy: .public)'"
-        )
-        withAnimation(.easeInOut(duration: 0.18)) {
-            provisionalGroups = movedGroups
-        }
     }
 
     private func rootEdgeMovedGroups(for source: String, location: CGPoint? = nil) -> [TaskCollectionGroupSummary]? {
