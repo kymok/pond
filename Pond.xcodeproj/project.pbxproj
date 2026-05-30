@@ -28,6 +28,9 @@
 		A0000000000000000000011B /* TaskRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021B /* TaskRow.swift */; };
 		A0000000000000000000011C /* TaskViewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021C /* TaskViewSupport.swift */; };
 		A0000000000000000000011D /* WindowControllers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021D /* WindowControllers.swift */; };
+		A0000000000000000000011E /* CollectionMenus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021E /* CollectionMenus.swift */; };
+		A0000000000000000000011F /* CollectionExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000021F /* CollectionExport.swift */; };
+		A00000000000000000000120 /* StoreChangeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000220 /* StoreChangeMonitor.swift */; };
 		A00000000000000000000121 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000221 /* main.swift */; };
 		A00000000000000000000131 /* TaskStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000231 /* TaskStoreTests.swift */; };
 		A00000000000000000000132 /* CommandLineInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000232 /* CommandLineInstallerTests.swift */; };
@@ -90,6 +93,9 @@
 		A0000000000000000000021B /* TaskRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRow.swift; sourceTree = "<group>"; };
 		A0000000000000000000021C /* TaskViewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskViewSupport.swift; sourceTree = "<group>"; };
 		A0000000000000000000021D /* WindowControllers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowControllers.swift; sourceTree = "<group>"; };
+		A0000000000000000000021E /* CollectionMenus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionMenus.swift; sourceTree = "<group>"; };
+		A0000000000000000000021F /* CollectionExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionExport.swift; sourceTree = "<group>"; };
+		A00000000000000000000220 /* StoreChangeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreChangeMonitor.swift; sourceTree = "<group>"; };
 		A00000000000000000000221 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		A00000000000000000000231 /* TaskStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStoreTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000232 /* CommandLineInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandLineInstallerTests.swift; sourceTree = "<group>"; };
@@ -196,6 +202,8 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000211 /* AppModel.swift */,
+				A0000000000000000000021F /* CollectionExport.swift */,
+				A0000000000000000000021E /* CollectionMenus.swift */,
 				A00000000000000000000212 /* ContentView.swift */,
 				A00000000000000000000213 /* DetailView.swift */,
 				A00000000000000000000214 /* InputEventHandlers.swift */,
@@ -204,6 +212,7 @@
 				A00000000000000000000217 /* SelectedCollectionPersistence.swift */,
 				A00000000000000000000218 /* SettingsView.swift */,
 				A00000000000000000000219 /* SidebarView.swift */,
+				A00000000000000000000220 /* StoreChangeMonitor.swift */,
 				A0000000000000000000021A /* TaskPromptSettings.swift */,
 				A0000000000000000000021B /* TaskRow.swift */,
 				A0000000000000000000021C /* TaskViewSupport.swift */,
@@ -407,6 +416,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000111 /* AppModel.swift in Sources */,
+				A0000000000000000000011F /* CollectionExport.swift in Sources */,
+				A0000000000000000000011E /* CollectionMenus.swift in Sources */,
 				A00000000000000000000112 /* ContentView.swift in Sources */,
 				A00000000000000000000113 /* DetailView.swift in Sources */,
 				A00000000000000000000114 /* InputEventHandlers.swift in Sources */,
@@ -415,6 +426,7 @@
 				A00000000000000000000117 /* SelectedCollectionPersistence.swift in Sources */,
 				A00000000000000000000118 /* SettingsView.swift in Sources */,
 				A00000000000000000000119 /* SidebarView.swift in Sources */,
+				A00000000000000000000120 /* StoreChangeMonitor.swift in Sources */,
 				A0000000000000000000011A /* TaskPromptSettings.swift in Sources */,
 				A0000000000000000000011B /* TaskRow.swift in Sources */,
 				A0000000000000000000011C /* TaskViewSupport.swift in Sources */,
