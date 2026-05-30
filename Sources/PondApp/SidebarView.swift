@@ -39,8 +39,8 @@ private func sidebarDragItemProvider(name: String, type: UTType) -> NSItemProvid
 }
 
 struct SidebarView: View {
-    @EnvironmentObject private var model: TaskAppModel
-    @EnvironmentObject private var taskDragState: TaskDragState
+    @Environment(TaskAppModel.self) private var model
+    @Environment(TaskDragState.self) private var taskDragState
     @Environment(\.openSettings) private var openSettings
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
     @FocusState private var focusedCollection: String?
@@ -60,6 +60,7 @@ struct SidebarView: View {
     @State private var sidebarSelection = TaskAppModel.allCollectionID
 
     var body: some View {
+        @Bindable var model = model
         VStack(spacing: 0) {
             List(selection: $sidebarSelection) {
                 Section {

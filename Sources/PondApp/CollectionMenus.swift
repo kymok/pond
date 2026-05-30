@@ -2,7 +2,7 @@ import SwiftUI
 import TaskCore
 
 struct CollectionColorMenu: View {
-    @EnvironmentObject private var model: TaskAppModel
+    @Environment(TaskAppModel.self) private var model
 
     let collection: TaskCollectionSummary
 
@@ -45,7 +45,7 @@ enum CollectionBulkStatusScope {
 }
 
 struct CollectionActionMenuItems: View {
-    @EnvironmentObject private var model: TaskAppModel
+    @Environment(TaskAppModel.self) private var model
 
     let collection: TaskCollectionSummary
     var showsCLICommand = false

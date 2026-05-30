@@ -3,8 +3,8 @@ import SwiftUI
 import TaskCore
 
 struct TaskRow: View {
-    @EnvironmentObject private var model: TaskAppModel
-    @EnvironmentObject private var taskDragState: TaskDragState
+    @Environment(TaskAppModel.self) private var model
+    @Environment(TaskDragState.self) private var taskDragState
 
     let item: TaskItem
     let isPendingDraft: Bool

@@ -1,15 +1,17 @@
 import AppKit
+import Observation
 import SwiftUI
 
 @MainActor
-final class SelectedCollectionPersistence: ObservableObject {
+@Observable
+final class SelectedCollectionPersistence {
     private static let key = "selectedCollection"
 
     let initialSelectedCollection: String
 
-    private let defaults: UserDefaults
-    private var terminationObserver: NSObjectProtocol?
-    private var selectionsByWindow: [ObjectIdentifier: () -> String?] = [:]
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var terminationObserver: NSObjectProtocol?
+    @ObservationIgnored private var selectionsByWindow: [ObjectIdentifier: () -> String?] = [:]
 
     init(defaults: UserDefaults = .standard, notificationCenter: NotificationCenter = .default) {
         self.defaults = defaults

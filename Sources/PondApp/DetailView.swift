@@ -4,8 +4,8 @@ import TaskCore
 import UniformTypeIdentifiers
 
 struct DetailView: View {
-    @EnvironmentObject private var model: TaskAppModel
-    @EnvironmentObject private var taskDragState: TaskDragState
+    @Environment(TaskAppModel.self) private var model
+    @Environment(TaskDragState.self) private var taskDragState
     @State private var focusedField: TaskFocusField?
     @State private var pendingDraftFocusID: String?
     @State private var activeTitleEdit: ActiveTaskTitleEdit?
@@ -1034,9 +1034,10 @@ private extension Array where Element == TaskItem {
 }
 
 private struct DetailToolbar: ToolbarContent {
-    @EnvironmentObject private var model: TaskAppModel
+    @Environment(TaskAppModel.self) private var model
 
     var body: some ToolbarContent {
+        @Bindable var model = model
         ToolbarItem(id: "taskOptions") {
             taskOptionsMenu
         }

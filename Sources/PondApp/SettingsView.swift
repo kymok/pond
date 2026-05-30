@@ -3,7 +3,7 @@ import SwiftUI
 import TaskCore
 
 struct SettingsView: View {
-    @EnvironmentObject private var model: TaskAppModel
+    @Environment(TaskAppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var defaultPromptTemplate = TaskPromptSettings.storedDefaultPromptTemplate
 

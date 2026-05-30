@@ -106,7 +106,7 @@ private enum PondPreviewData {
 
 #Preview("Pond") {
     ContentView()
-        .environmentObject(PondPreviewData.model(storeName: "content"))
+        .environment(PondPreviewData.model(storeName: "content"))
         .frame(width: 920, height: 620)
 }
 
@@ -114,11 +114,11 @@ private enum PondPreviewData {
     NavigationStack {
         DetailView()
     }
-    .environmentObject(PondPreviewData.model(
+    .environment(PondPreviewData.model(
         storeName: "detail",
         selectedCollection: PondPreviewData.designCollection
     ))
-    .environmentObject(TaskDragState())
+    .environment(TaskDragState())
     .frame(width: 640, height: 520)
 }
 

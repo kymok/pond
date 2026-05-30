@@ -3,13 +3,14 @@ import SwiftUI
 import TaskCore
 
 struct ContentView: View {
-    @EnvironmentObject private var model: TaskAppModel
+    @Environment(TaskAppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alwaysOnTop") private var alwaysOnTop = false
-    @StateObject private var taskDragState = TaskDragState()
+    @State private var taskDragState = TaskDragState()
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
+        @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(
@@ -20,7 +21,7 @@ struct ContentView: View {
         } detail: {
             DetailView()
         }
-        .environmentObject(taskDragState)
+        .environment(taskDragState)
         .frame(minWidth: 480, minHeight: 320)
         .background(WindowLevelController(alwaysOnTop: alwaysOnTop))
         .background(WindowStateController())

@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import Dispatch
+import Observation
 import OSLog
 import SwiftUI
 import TaskCore
@@ -23,7 +24,8 @@ struct TaskCollectionPromptEditRequest: Identifiable {
 }
 
 @MainActor
-final class TaskAppModel: ObservableObject {
+@Observable
+final class TaskAppModel {
     static let allCollectionID = "__all__"
     private static let usesAutoDraftKey = "usesAutoDraft"
     private static let sidebarDragLogger = Logger(
@@ -31,37 +33,37 @@ final class TaskAppModel: ObservableObject {
         category: "SidebarDrag"
     )
 
-    @Published var items: [TaskItem] = []
-    @Published var collectionSummaries: [TaskCollectionSummary] = []
-    @Published var collectionGroupSummaries: [TaskCollectionGroupSummary] = []
-    @Published var selectedCollection: String
-    @Published var searchText = ""
-    @Published var showsIncompleteOnly = false
-    @Published var showsArchivedCollections = false {
+    var items: [TaskItem] = []
+    var collectionSummaries: [TaskCollectionSummary] = []
+    var collectionGroupSummaries: [TaskCollectionGroupSummary] = []
+    var selectedCollection: String
+    var searchText = ""
+    var showsIncompleteOnly = false
+    var showsArchivedCollections = false {
         didSet {
             if !showsArchivedCollections, selectedCollectionSummary?.isArchived == true {
                 selectedCollection = Self.allCollectionID
             }
         }
     }
-    @Published var usesAutoDraft: Bool {
+    var usesAutoDraft: Bool {
         didSet {
             UserDefaults.standard.set(usesAutoDraft, forKey: Self.usesAutoDraftKey)
         }
     }
-    @Published var errorMessage: String?
-    @Published var cliStatus: CLIInstallStatus?
-    @Published var collectionDeletionRequest: TaskCollectionSummary?
-    @Published var bulkStatusChangeRequest: TaskBulkStatusChangeRequest?
-    @Published var collectionPromptEditRequest: TaskCollectionPromptEditRequest?
-    @Published var groupEditingRequest: String?
-    @Published private var recentlyCompletedVisibleIDs: Set<String> = []
+    var errorMessage: String?
+    var cliStatus: CLIInstallStatus?
+    var collectionDeletionRequest: TaskCollectionSummary?
+    var bulkStatusChangeRequest: TaskBulkStatusChangeRequest?
+    var collectionPromptEditRequest: TaskCollectionPromptEditRequest?
+    var groupEditingRequest: String?
+    private var recentlyCompletedVisibleIDs: Set<String> = []
 
-    private let store: TaskStore
-    private let installer: CommandLineInstaller
-    private var storeChangeMonitor: StoreChangeMonitor?
-    private var completedHideTasks: [String: Task<Void, Never>] = [:]
-    private var hasLoadedItems = false
+    @ObservationIgnored private let store: TaskStore
+    @ObservationIgnored private let installer: CommandLineInstaller
+    @ObservationIgnored private var storeChangeMonitor: StoreChangeMonitor?
+    @ObservationIgnored private var completedHideTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var hasLoadedItems = false
 
     init(
         store: TaskStore = TaskStore(),

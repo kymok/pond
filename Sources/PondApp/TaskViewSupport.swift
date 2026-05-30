@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 import TaskCore
 import UniformTypeIdentifiers
@@ -506,11 +507,12 @@ final class TaskDragMetricsNSView: NSView {
 }
 
 @MainActor
-final class TaskDragState: ObservableObject {
-    @Published var draggedItemID: String?
-    @Published private var provisionalItemIDs: [String]?
+@Observable
+final class TaskDragState {
+    var draggedItemID: String?
+    private var provisionalItemIDs: [String]?
 
-    private var sourceSnapshotsByItemID: [String: TaskDragElementSnapshot] = [:]
+    @ObservationIgnored private var sourceSnapshotsByItemID: [String: TaskDragElementSnapshot] = [:]
 
     func beginDragging(item: TaskItem, visibleItemIDs: [String], selectedCollection _: String?) {
         draggedItemID = item.id
@@ -533,7 +535,6 @@ final class TaskDragState: ObservableObject {
 
     func finishDragging(reason: String = "unspecified") {
         _ = reason
-        objectWillChange.send()
         draggedItemID = nil
         provisionalItemIDs = nil
     }
