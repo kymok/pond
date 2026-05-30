@@ -355,10 +355,12 @@ struct SidebarView: View {
             draggedCollection: $draggedSidebarCollection,
             provisionalGroups: $provisionalCollectionGroups,
             targetCollection: $taskDropTargetCollection,
+            draggedGroup: $draggedSidebarGroup,
             moveItemToCollection: { item, collection in
                 model.move(item, collection: collection)
             },
-            moveCollection: model.reorderCollection
+            moveCollection: model.reorderCollection,
+            moveGroup: model.reorderCollectionGroup
         )
         let row = collectionRow(collection, allowsEditing: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -373,12 +375,12 @@ struct SidebarView: View {
                     .padding(.vertical, -5)
                     .contentShape(Rectangle())
                     .onDrop(
-                        of: TaskItemDrag.acceptedTypes + SidebarCollectionDrag.acceptedTypes,
+                        of: TaskItemDrag.acceptedTypes + SidebarCollectionDrag.acceptedTypes + SidebarGroupDrag.acceptedTypes,
                         delegate: dropDelegate
                     )
             }
             .onDrop(
-                of: TaskItemDrag.acceptedTypes + SidebarCollectionDrag.acceptedTypes,
+                of: TaskItemDrag.acceptedTypes + SidebarCollectionDrag.acceptedTypes + SidebarGroupDrag.acceptedTypes,
                 delegate: dropDelegate
             )
             .listRowBackground(collectionDropBackground(collection))
@@ -913,11 +915,15 @@ private struct SidebarCollectionDropDelegate: DropDelegate {
     @Binding var draggedCollection: String?
     @Binding var provisionalGroups: [TaskCollectionGroupSummary]?
     @Binding var targetCollection: String?
+    @Binding var draggedGroup: String?
     let moveItemToCollection: (TaskItem, String) -> Void
     let moveCollection: (String, String, String?, String?) -> Bool
+    let moveGroup: (String, String?, String?) -> Bool
 
     func dropEntered(info: DropInfo) {
-        if info.hasItemsConforming(to: SidebarCollectionDrag.acceptedTypes) {
+        if info.hasItemsConforming(to: SidebarGroupDrag.acceptedTypes) {
+            updateProvisionalGroupOrder()
+        } else if info.hasItemsConforming(to: SidebarCollectionDrag.acceptedTypes) {
             sidebarDragLogger.debug("Collection drop entered target='\(collection.name, privacy: .public)'")
             updateProvisionalOrder()
         } else if canShowTarget {
@@ -926,6 +932,14 @@ private struct SidebarCollectionDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        if info.hasItemsConforming(to: SidebarGroupDrag.acceptedTypes) {
+            guard canAcceptGroupDrop else {
+                return nil
+            }
+            updateProvisionalGroupOrder()
+            return DropProposal(operation: .move)
+        }
+
         if info.hasItemsConforming(to: SidebarCollectionDrag.acceptedTypes) {
             guard canAcceptCollectionDrop else {
                 sidebarDragLogger.debug(
@@ -958,6 +972,10 @@ private struct SidebarCollectionDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        if info.hasItemsConforming(to: SidebarGroupDrag.acceptedTypes) {
+            return performGroupDrop()
+        }
+
         if info.hasItemsConforming(to: SidebarCollectionDrag.acceptedTypes) {
             return performCollectionDrop()
         }
@@ -1001,6 +1019,55 @@ private struct SidebarCollectionDropDelegate: DropDelegate {
             "Collection drop performing source='\(source, privacy: .public)' target='\(collection.name, privacy: .public)' group='\(placement.group, privacy: .public)'"
         )
         return moveCollection(source, placement.group, placement.after, placement.before)
+    }
+
+    // A group dropped anywhere over this collection's group block reorders it
+    // relative to that group, matching the group-header drop target.
+    private var canAcceptGroupDrop: Bool {
+        guard let draggedGroup,
+              draggedGroup != TaskStore.defaultCollectionGroup,
+              groups.contains(where: { $0.name == draggedGroup }) else {
+            return false
+        }
+
+        return true
+    }
+
+    private func updateProvisionalGroupOrder() {
+        guard canAcceptGroupDrop,
+              let source = draggedGroup,
+              source != collection.groupName,
+              let movedGroups = moveGroupInSidebarGroups(
+                source,
+                target: collection.groupName,
+                groups: provisionalGroups ?? groups
+              ) else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.18)) {
+            provisionalGroups = movedGroups
+        }
+    }
+
+    private func performGroupDrop() -> Bool {
+        defer {
+            draggedGroup = nil
+            provisionalGroups = nil
+        }
+
+        guard let source = draggedGroup,
+              source != TaskStore.defaultCollectionGroup,
+              (provisionalGroups ?? groups).contains(where: { $0.name == source }) else {
+            return false
+        }
+
+        let finalGroups = provisionalGroups ?? groups
+        guard let placement = groupPlacement(for: source, in: finalGroups) else {
+            return true
+        }
+
+        return moveGroup(source, placement.after, placement.before)
     }
 
     private func updateProvisionalOrder() {
