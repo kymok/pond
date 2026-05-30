@@ -117,12 +117,7 @@ struct TaskRow: View {
                             Button {
                                 model.setStatus(item, status: status)
                             } label: {
-                                Label {
-                                    Text(status.displayName)
-                                } icon: {
-                                    Image(nsImage: status.menuImage)
-                                        .renderingMode(.original)
-                                }
+                                statusMenuLabel(status)
                             }
                         }
                     }
@@ -133,16 +128,20 @@ struct TaskRow: View {
                     .disabled(!canEditTitleAndCollection)
 
                     Section("Item") {
-                        Button(item.notes.isEmpty ? "Add Note" : "Edit Note") {
+                        Button {
                             beginAddingNote()
+                        } label: {
+                            shortcutMenuLabel(item.notes.isEmpty ? "Add Note" : "Edit Note", shortcut: "⌘⌥N")
                         }
 
                         Button("Copy ID") {
                             copyIDToPasteboard()
                         }
 
-                        Button("Delete", role: .destructive) {
+                        Button(role: .destructive) {
                             deleteAndFocusPrevious(item)
+                        } label: {
+                            shortcutMenuLabel("Delete", shortcut: "⌘⌫")
                         }
                     }
                 } label: {
@@ -252,18 +251,24 @@ struct TaskRow: View {
             )
         )
         .contextMenu {
-            Button("Mark Draft") {
+            Button {
                 model.setStatus(item, status: .draft)
+            } label: {
+                shortcutMenuLabel("Mark Draft", shortcut: "⌘D")
             }
             .disabled(isPendingDraft || item.status == .draft)
 
-            Button(item.notes.isEmpty ? "Add Note" : "Edit Note") {
+            Button {
                 beginAddingNote()
+            } label: {
+                shortcutMenuLabel(item.notes.isEmpty ? "Add Note" : "Edit Note", shortcut: "⌘⌥N")
             }
             .disabled(isPendingDraft)
 
-            Button("Delete", role: .destructive) {
+            Button(role: .destructive) {
                 deleteAndFocusPrevious(item)
+            } label: {
+                shortcutMenuLabel("Delete", shortcut: "⌘⌫")
             }
         }
         .onChange(of: item.status) { _, _ in
@@ -297,6 +302,55 @@ struct TaskRow: View {
 
     private var leadingStatusButtonTitle: String {
         "Mark \(item.status.leadingStatusClickTarget.displayName)"
+    }
+
+    @ViewBuilder
+    private func statusMenuLabel(_ status: TaskStatus) -> some View {
+        if let shortcut = statusMenuShortcut(for: status) {
+            HStack {
+                Label {
+                    Text(status.displayName)
+                } icon: {
+                    Image(nsImage: status.menuImage)
+                        .renderingMode(.original)
+                }
+
+                Spacer()
+
+                Text(shortcut)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Label {
+                Text(status.displayName)
+            } icon: {
+                Image(nsImage: status.menuImage)
+                    .renderingMode(.original)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func shortcutMenuLabel(_ title: String, shortcut: String) -> some View {
+        HStack {
+            Text(title)
+
+            Spacer()
+
+            Text(shortcut)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func statusMenuShortcut(for status: TaskStatus) -> String? {
+        switch status {
+        case .draft:
+            "⌘D"
+        case .ready:
+            "⌘↩"
+        default:
+            nil
+        }
     }
 
     private func markDraftFromStatusButton() {

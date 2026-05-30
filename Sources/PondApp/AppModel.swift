@@ -358,8 +358,7 @@ final class TaskAppModel: ObservableObject {
         before nextName: String?
     ) -> Bool {
         guard let collection = collectionSummaries.first(where: { $0.name == name }),
-              !isDefaultCollection(collection),
-              !collection.isArchived else {
+              !isDefaultCollection(collection) else {
             Self.sidebarDragLogger.info("Collection reorder skipped for invalid source '\(name, privacy: .public)'")
             return false
         }
@@ -369,8 +368,8 @@ final class TaskAppModel: ObservableObject {
             let moved = try store.reorderCollection(
                 name: sourceName,
                 toGroup: group,
-                after: previousName,
-                before: nextName
+                after: collection.isArchived ? nil : previousName,
+                before: collection.isArchived ? nil : nextName
             )
             if selectedCollection == collection.name {
                 selectedCollection = moved.name

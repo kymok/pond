@@ -103,7 +103,7 @@ struct SidebarView: View {
 
             HStack(spacing: 8) {
                 Menu {
-                    Menu("Add a Collection") {
+                    Menu("Add a Collection To") {
                         ForEach(model.collectionGroupSummaries) { group in
                             Button(model.collectionGroupDisplayName(group.name)) {
                                 createCollection(group: group.name)
@@ -117,7 +117,7 @@ struct SidebarView: View {
 
                     Divider()
 
-                    Toggle("Show Only Incomplete Items", isOn: showIncompleteOnlySelection)
+                    Toggle("Hide Completed Items", isOn: showIncompleteOnlySelection)
                     Toggle("Show Archived Collections", isOn: $model.showsArchivedCollections)
                     Toggle("Automatic Drafts", isOn: $model.usesAutoDraft)
                     Toggle("Always On Top", isOn: $alwaysOnTop)
@@ -375,6 +375,11 @@ struct SidebarView: View {
         let row = collectionRow(collection, allowsEditing: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .onTapGesture {
+                if editingCollection != collection.name {
+                    setSidebarSelection(collection.name)
+                }
+            }
             .background {
                 Color.clear
                     .padding(.vertical, -5)
@@ -403,8 +408,52 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func archivedCollectionListRow(_ collection: TaskCollectionSummary) -> some View {
-        collectionRow(collection, allowsEditing: false)
+        let row = collectionRow(collection, allowsEditing: false)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                setSidebarSelection(collection.name)
+            }
+            .contextMenu {
+                archivedCollectionActionMenuItems(collection)
+            }
             .opacity(0.55)
+
+        if canDragCollection(collection) {
+            row.onDrag {
+                beginDraggingCollection(collection.name)
+            } preview: {
+                SidebarCollectionDragPreview(collection: collection)
+            }
+        } else {
+            row
+        }
+    }
+
+    @ViewBuilder
+    private func archivedCollectionActionMenuItems(_ collection: TaskCollectionSummary) -> some View {
+        Menu("Group") {
+            ForEach(model.collectionGroupSummaries) { group in
+                Button(model.collectionGroupDisplayName(group.name)) {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        model.moveCollection(collection, toGroup: group.name)
+                    }
+                }
+                .disabled(group.name == collection.groupName)
+            }
+
+            Divider()
+
+            Button("Add to a New Group") {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    _ = model.createCollectionGroupAndMoveCollectionForEditing(collection)
+                }
+            }
+        }
+
+        Button("Unarchive Collection") {
+            model.setCollectionArchived(collection, isArchived: false)
+        }
     }
 
     @ViewBuilder
@@ -432,9 +481,6 @@ struct SidebarView: View {
             }
                 .badge(collection.incompleteCount)
                 .help(collection.name)
-                .onTapGesture {
-                    setSidebarSelection(collection.name)
-                }
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded {
                         guard allowsEditing, !model.isDefaultCollection(collection) else {
@@ -496,7 +542,7 @@ struct SidebarView: View {
     }
 
     private func canDragCollection(_ collection: TaskCollectionSummary) -> Bool {
-        !model.isDefaultCollection(collection) && !collection.isArchived
+        !model.isDefaultCollection(collection)
     }
 
     private func beginDraggingCollection(_ collection: String) -> NSItemProvider {
@@ -1243,8 +1289,7 @@ private struct SidebarGroupHeaderDropDelegate: DropDelegate {
     private var canAcceptCollectionDrop: Bool {
         guard let draggedCollection,
               draggedCollection != TaskStore.defaultCollection,
-              let source = collectionSummary(named: draggedCollection),
-              !source.isArchived else {
+              collectionSummary(named: draggedCollection) != nil else {
             return false
         }
 
