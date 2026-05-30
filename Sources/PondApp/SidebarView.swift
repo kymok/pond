@@ -142,7 +142,7 @@ struct SidebarView: View {
         .onDrop(
             of: TaskItemDrag.acceptedTypes + SidebarCollectionDrag.acceptedTypes + SidebarGroupDrag.acceptedTypes,
             delegate: SidebarTaskDropCleanupDelegate(
-                groups: displayedCollectionGroups,
+                groups: model.visibleCollectionGroups,
                 dragState: taskDragState,
                 draggedCollection: $draggedSidebarCollection,
                 draggedGroup: $draggedSidebarGroup,
@@ -247,7 +247,7 @@ struct SidebarView: View {
             of: SidebarCollectionDrag.acceptedTypes + SidebarGroupDrag.acceptedTypes,
             delegate: SidebarGroupHeaderDropDelegate(
                 group: group,
-                groups: displayedCollectionGroups,
+                groups: model.visibleCollectionGroups,
                 draggedCollection: $draggedSidebarCollection,
                 draggedGroup: $draggedSidebarGroup,
                 provisionalGroups: $provisionalCollectionGroups,
@@ -349,7 +349,7 @@ struct SidebarView: View {
     private func collectionListRow(_ collection: TaskCollectionSummary) -> some View {
         let dropDelegate = SidebarCollectionDropDelegate(
             collection: collection,
-            groups: displayedCollectionGroups,
+            groups: model.visibleCollectionGroups,
             items: model.items,
             dragState: taskDragState,
             draggedCollection: $draggedSidebarCollection,
@@ -1040,7 +1040,7 @@ private struct SidebarCollectionDropDelegate: DropDelegate {
               let movedGroups = moveGroupInSidebarGroups(
                 source,
                 target: collection.groupName,
-                groups: provisionalGroups ?? groups
+                groups: groups
               ) else {
             return
         }
@@ -1303,7 +1303,7 @@ private struct SidebarGroupHeaderDropDelegate: DropDelegate {
               let movedGroups = moveGroupInSidebarGroups(
                 source,
                 target: group.name,
-                groups: provisionalGroups ?? groups
+                groups: groups
               ) else {
             return
         }
@@ -1419,7 +1419,7 @@ private struct SidebarTaskDropCleanupDelegate: DropDelegate {
             return true
         }
 
-        let finalGroups = rootEdgeMovedGroups(for: source, location: info.location) ?? provisionalGroups ?? groups
+        let finalGroups = provisionalGroups ?? rootEdgeMovedGroups(for: source, location: info.location) ?? groups
         guard let placement = groupPlacement(for: source, in: finalGroups) else {
             sidebarDragLogger.info("Group root drop no-op source='\(source, privacy: .public)'")
             return true
