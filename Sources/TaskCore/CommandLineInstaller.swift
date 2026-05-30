@@ -180,10 +180,7 @@ public final class CommandLineInstaller: @unchecked Sendable {
             withIntermediateDirectories: true
         )
 
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(record).write(to: recordURL, options: .atomic)
+        try PondJSON.persistedEncoder.encode(record).write(to: recordURL, options: .atomic)
     }
 
     private func readRecord() -> CLIInstallRecord? {
@@ -191,9 +188,7 @@ public final class CommandLineInstaller: @unchecked Sendable {
             return nil
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(CLIInstallRecord.self, from: data)
+        return try? PondJSON.persistedDecoder.decode(CLIInstallRecord.self, from: data)
     }
 }
 

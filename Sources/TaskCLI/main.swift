@@ -267,9 +267,7 @@ struct TaskCommand {
     }
 
     private static func printJSON<T: Encodable>(_ value: T) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(value)
+        let data = try PondJSON.cliEncoder.encode(value)
         guard let output = String(data: data, encoding: .utf8) else {
             return
         }

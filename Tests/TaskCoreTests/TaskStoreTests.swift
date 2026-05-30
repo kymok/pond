@@ -1405,9 +1405,7 @@ final class TaskStoreTests: XCTestCase {
             version: 1,
             items: items
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let encoder = PondJSON.persistedEncoder
 
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
@@ -1426,9 +1424,7 @@ final class TaskStoreTests: XCTestCase {
             collectionGroups: groups,
             items: items
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let encoder = PondJSON.persistedEncoder
 
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),

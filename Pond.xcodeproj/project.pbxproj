@@ -11,6 +11,10 @@
 		A00000000000000000000102 /* TaskStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000202 /* TaskStore.swift */; };
 		A00000000000000000000103 /* CommandLineInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000203 /* CommandLineInstaller.swift */; };
 		A00000000000000000000104 /* TaskPromptTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000204 /* TaskPromptTemplate.swift */; };
+		A00000000000000000000105 /* JSONCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000205 /* JSONCoding.swift */; };
+		A00000000000000000000106 /* TaskStoreError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000206 /* TaskStoreError.swift */; };
+		A00000000000000000000107 /* TaskCollectionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000207 /* TaskCollectionSupport.swift */; };
+		A00000000000000000000108 /* TaskItemSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000208 /* TaskItemSupport.swift */; };
 		A00000000000000000000111 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000211 /* AppModel.swift */; };
 		A00000000000000000000112 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000212 /* ContentView.swift */; };
 		A00000000000000000000113 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000213 /* DetailView.swift */; };
@@ -69,6 +73,10 @@
 		A00000000000000000000202 /* TaskStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStore.swift; sourceTree = "<group>"; };
 		A00000000000000000000203 /* CommandLineInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandLineInstaller.swift; sourceTree = "<group>"; };
 		A00000000000000000000204 /* TaskPromptTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskPromptTemplate.swift; sourceTree = "<group>"; };
+		A00000000000000000000205 /* JSONCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCoding.swift; sourceTree = "<group>"; };
+		A00000000000000000000206 /* TaskStoreError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStoreError.swift; sourceTree = "<group>"; };
+		A00000000000000000000207 /* TaskCollectionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCollectionSupport.swift; sourceTree = "<group>"; };
+		A00000000000000000000208 /* TaskItemSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskItemSupport.swift; sourceTree = "<group>"; };
 		A00000000000000000000211 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000212 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A00000000000000000000213 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
@@ -173,9 +181,13 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000203 /* CommandLineInstaller.swift */,
+				A00000000000000000000205 /* JSONCoding.swift */,
+				A00000000000000000000207 /* TaskCollectionSupport.swift */,
 				A00000000000000000000201 /* TaskItem.swift */,
+				A00000000000000000000208 /* TaskItemSupport.swift */,
 				A00000000000000000000204 /* TaskPromptTemplate.swift */,
 				A00000000000000000000202 /* TaskStore.swift */,
+				A00000000000000000000206 /* TaskStoreError.swift */,
 			);
 			path = TaskCore;
 			sourceTree = "<group>";
@@ -380,9 +392,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000103 /* CommandLineInstaller.swift in Sources */,
+				A00000000000000000000105 /* JSONCoding.swift in Sources */,
+				A00000000000000000000107 /* TaskCollectionSupport.swift in Sources */,
 				A00000000000000000000101 /* TaskItem.swift in Sources */,
+				A00000000000000000000108 /* TaskItemSupport.swift in Sources */,
 				A00000000000000000000104 /* TaskPromptTemplate.swift in Sources */,
 				A00000000000000000000102 /* TaskStore.swift in Sources */,
+				A00000000000000000000106 /* TaskStoreError.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
